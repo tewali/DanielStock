@@ -54,6 +54,8 @@ body {
 }
 
 :root {
+  --font-geist-sans: Inter, 'Avenir Next', Avenir, Helvetica, Arial, sans-serif;
+  --font-geist-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   --background: #edefea;
   --foreground: #17211e;
   --card: oklch(1 0 0);

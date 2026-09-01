@@ -1,7 +1,7 @@
-import { neon } from '@neondatabase/serverless';
+import { Pool } from 'pg';
 import { z } from 'zod';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 const stateSchema = z.object({
   growth: z.record(z.string(), z.number()),
@@ -13,57 +13,85 @@ const stateSchema = z.object({
   params: z.record(z.string(), z.number()),
 });
 
-function database() {
+let pool: Pool | null = null;
+
+function database(): Pool | null {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  return neon(url);
+  pool ??= new Pool({ connectionString: url, max: 5 });
+  return pool;
 }
 
-async function ensureSchema(sql: ReturnType<typeof neon>) {
-  await sql`
+async function ensureSchema(sql: Pool) {
+  await sql.query(`
     CREATE TABLE IF NOT EXISTS portfolio_state (
       id text PRIMARY KEY,
       state jsonb NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
-  `;
+  `);
 }
 
 export async function GET() {
   const sql = database();
-  if (!sql) return Response.json({ error: 'DATABASE_URL is not configured' }, { status: 503 });
+  if (!sql)
+    return Response.json(
+      { error: 'DATABASE_URL is not configured' },
+      { status: 503 },
+    );
 
   await ensureSchema(sql);
-  const rows = await sql`SELECT state, updated_at FROM portfolio_state WHERE id = 'primary' LIMIT 1`;
-  const row = rows[0];
-  return Response.json({ state: row?.state ?? null, updatedAt: row?.updated_at ?? null });
+  const result = await sql.query<{ state: unknown; updated_at: Date }>(
+    "SELECT state, updated_at FROM portfolio_state WHERE id = 'primary' LIMIT 1",
+  );
+  const row = result.rows[0];
+  return Response.json({
+    state: row?.state ?? null,
+    updatedAt: row?.updated_at ?? null,
+  });
 }
 
 export async function PUT(request: Request) {
   const sql = database();
-  if (!sql) return Response.json({ error: 'DATABASE_URL is not configured' }, { status: 503 });
+  if (!sql)
+    return Response.json(
+      { error: 'DATABASE_URL is not configured' },
+      { status: 503 },
+    );
 
-  const parsed = z.object({ state: stateSchema }).safeParse(await request.json());
+  const parsed = z
+    .object({ state: stateSchema })
+    .safeParse(await request.json());
   if (!parsed.success) {
-    return Response.json({ error: 'Invalid portfolio state', issues: parsed.error.issues }, { status: 400 });
+    return Response.json(
+      { error: 'Invalid portfolio state', issues: parsed.error.issues },
+      { status: 400 },
+    );
   }
 
   await ensureSchema(sql);
   const encoded = JSON.stringify(parsed.data.state);
-  const rows = await sql`
+  const result = await sql.query<{ updated_at: Date }>(
+    `
     INSERT INTO portfolio_state (id, state, updated_at)
-    VALUES ('primary', ${encoded}::jsonb, now())
+    VALUES ('primary', $1::jsonb, now())
     ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()
     RETURNING updated_at
-  `;
-  return Response.json({ ok: true, updatedAt: rows[0]?.updated_at });
+  `,
+    [encoded],
+  );
+  return Response.json({ ok: true, updatedAt: result.rows[0]?.updated_at });
 }
 
 export async function DELETE() {
   const sql = database();
-  if (!sql) return Response.json({ error: 'DATABASE_URL is not configured' }, { status: 503 });
+  if (!sql)
+    return Response.json(
+      { error: 'DATABASE_URL is not configured' },
+      { status: 503 },
+    );
 
   await ensureSchema(sql);
-  await sql`DELETE FROM portfolio_state WHERE id = 'primary'`;
+  await sql.query("DELETE FROM portfolio_state WHERE id = 'primary'");
   return Response.json({ ok: true });
 }
