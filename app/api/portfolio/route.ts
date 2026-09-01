@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
 import { z } from 'zod';
 
+import { isAuthenticated } from '@/lib/auth';
+
 export const runtime = 'nodejs';
 
 const stateSchema = z.object({
@@ -32,7 +34,16 @@ async function ensureSchema(sql: Pool) {
   `);
 }
 
-export async function GET() {
+async function authorized(request: Request) {
+  return isAuthenticated(request.headers.get('cookie'));
+}
+
+function unauthorized() {
+  return Response.json({ error: 'Unauthorized' }, { status: 401 });
+}
+
+export async function GET(request: Request) {
+  if (!(await authorized(request))) return unauthorized();
   const sql = database();
   if (!sql)
     return Response.json(
@@ -52,6 +63,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  if (!(await authorized(request))) return unauthorized();
   const sql = database();
   if (!sql)
     return Response.json(
@@ -83,7 +95,8 @@ export async function PUT(request: Request) {
   return Response.json({ ok: true, updatedAt: result.rows[0]?.updated_at });
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  if (!(await authorized(request))) return unauthorized();
   const sql = database();
   if (!sql)
     return Response.json(

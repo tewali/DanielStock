@@ -72,7 +72,55 @@ const CSS = `
 .ck .lbl { font-size:11.5px; color:${T.muted}; }
 .ck .dot { transition: r 120ms ease; }
 @media (prefers-reduced-motion: reduce) { .ck * { transition:none !important; animation:none !important; } }
-@media (max-width: 820px) { .ck .cols2 { grid-template-columns:1fr !important; } .ck .rail { position:static !important; width:auto !important; height:auto !important; display:flex !important; overflow-x:auto; } .ck .rail .navbtn { border-left:0; border-bottom:2px solid transparent; white-space:nowrap; } .ck .rail .navbtn[aria-current=true] { border-bottom-color:${T.accent}; } }
+@media (max-width: 820px) {
+  .ck { font-size:13.5px; min-height:100dvh !important; }
+  .ck .app-header { position:relative; }
+  .ck .topbar { align-items:flex-start !important; gap:8px 10px !important; padding:12px 12px 10px !important; }
+  .ck .topbar h1 { width:100%; font-size:19px !important; }
+  .ck .topbar-meta { flex:1 1 calc(100% - 130px); line-height:1.35; }
+  .ck .syncbtn { min-height:38px; padding:7px 10px !important; }
+  .ck .storagebar { width:100%; margin-left:0 !important; justify-content:space-between; flex-wrap:wrap; gap:7px !important; }
+  .ck .storagebar button { min-height:38px; }
+  .ck .scenario { display:grid !important; grid-template-columns:auto minmax(0,1fr) auto; gap:8px 10px !important; padding:10px 12px 12px !important; }
+  .ck .scenario-label { width:auto !important; align-self:center; }
+  .ck .scenario input[type=range] { max-width:none !important; min-height:34px; }
+  .ck .scenario-value { width:auto !important; align-self:center; }
+  .ck .scenario-note { grid-column:1 / -1; }
+  .ck .app-shell { flex-direction:column; align-items:stretch !important; }
+  .ck .cols2 { grid-template-columns:1fr !important; gap:14px !important; }
+  .ck .rail { position:sticky !important; top:0 !important; z-index:20; width:100% !important; height:auto !important; display:flex !important; overflow-x:auto; padding:0 !important; border-right:0 !important; border-bottom:1px solid ${T.line}; background:${T.panel}; scrollbar-width:none; }
+  .ck .rail::-webkit-scrollbar { display:none; }
+  .ck .rail .navbtn { width:auto; min-height:44px; flex:0 0 auto; padding:11px 14px; border-left:0; border-bottom:2px solid transparent; white-space:nowrap; }
+  .ck .rail .navbtn[aria-current=true] { border-bottom-color:${T.accent}; }
+  .ck .app-main { padding:14px 12px 52px !important; }
+  .ck section { margin-bottom:20px !important; }
+  .ck .section-head { align-items:flex-start !important; flex-direction:column; gap:8px !important; }
+  .ck .section-head > * { max-width:100%; }
+  .ck .kpi { flex:1 1 50% !important; min-width:50% !important; padding:11px 12px !important; border-bottom:1px solid ${T.line}; }
+  .ck .kpi .num { font-size:18px !important; }
+  .ck .ladder { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .ck .ladder svg { min-width:720px; }
+  .ck .panel.scroll { max-height:calc(100dvh - 205px) !important; }
+  .ck .scroll { -webkit-overflow-scrolling:touch; overscroll-behavior-inline:contain; }
+  .ck .scroll table { min-width:760px; }
+  .ck th,.ck td { padding:8px 9px; }
+  .ck tbody tr { min-height:44px; }
+  .ck input[type=number], .ck input[type=text], .ck select { min-height:40px; font-size:16px; }
+  .ck input[type=checkbox] { width:20px; height:20px; }
+  .ck .drawer { width:100vw !important; max-width:none !important; border-left:0 !important; box-shadow:none !important; }
+  .ck .drawer > div:first-child { padding:12px 14px !important; }
+  .ck .drawer > div:first-child button { min-width:44px; min-height:44px; font-size:24px !important; }
+  .ck .drawer .scroll { padding:12px 14px 28px !important; }
+}
+@media (max-width: 480px) {
+  .ck .kpi { flex-basis:100% !important; min-width:100% !important; border-right:0 !important; }
+  .ck .topbar-meta { flex-basis:100%; }
+  .ck .syncbtn { width:100%; }
+  .ck .scenario { grid-template-columns:1fr auto; }
+  .ck .scenario-label { grid-column:1 / -1; }
+  .ck .scenario input[type=range] { grid-column:1; }
+  .ck .scenario-value { grid-column:2; }
+}
 `;
 
 /* ── Formatting ───────────────────────────────────────────────────────── */
@@ -282,7 +330,7 @@ const Lbl = ({ children }) => <div className="lbl">{children}</div>;
 
 function Kpi({ label, value, sub, tone }) {
   return (
-    <div style={{ padding: "12px 16px", borderRight: `1px solid ${T.line}`, flex: "1 1 150px", minWidth: 150 }}>
+    <div className="kpi" style={{ padding: "12px 16px", borderRight: `1px solid ${T.line}`, flex: "1 1 150px", minWidth: 150 }}>
       <Lbl>{label}</Lbl>
       <div className="num" style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em", color: tone || T.ink, marginTop: 2 }}>{value}</div>
       {sub && <div className="lbl" style={{ marginTop: 2 }}>{sub}</div>}
@@ -363,7 +411,7 @@ function Num({ value, onChange, step = 1, min, max, suffix, width = 78 }) {
 function Section({ title, note, children, right }) {
   return (
     <section style={{ marginBottom: 26 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 8 }}>
+      <div className="section-head" style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 8 }}>
         <div>
           <h2 style={{ fontSize: 15 }}>{title}</h2>
           {note && <div className="lbl" style={{ maxWidth: 78 + "ch", marginTop: 3 }}>{note}</div>}
@@ -395,7 +443,7 @@ function Ladder({ rows, onPick, selected }) {
   const zeroX = ((0 - LO) / (HI - LO)) * W;
   const ticks = [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
   return (
-    <div className="panel" style={{ padding: "10px 12px 4px" }}>
+    <div className="panel ladder" style={{ padding: "10px 12px 4px" }}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Abstand jedes Titels zu seinem Kaufziel">
         <rect x={0} y={16} width={zeroX} height={H - 30} fill={T.buyBg} opacity={0.55} />
         {ticks.map((t) => {
@@ -1393,6 +1441,7 @@ function Drawer({ ticker, m, state, set, close }) {
 
   return (
     <aside
+      className="drawer"
       style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(430px, 94vw)", background: T.panel, borderLeft: `1px solid ${T.line}`, boxShadow: "-14px 0 34px rgba(20,30,26,.10)", zIndex: 40, display: "flex", flexDirection: "column" }}
       role="dialog" aria-label={"Detail " + name}
     >
@@ -1603,17 +1652,17 @@ export default function PortfolioCockpit() {
     <div className="ck" style={{ minHeight: "100vh" }}>
       <style>{CSS}</style>
 
-      <header style={{ borderBottom: `1px solid ${T.line}`, background: T.panel }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 14, padding: "14px 20px 10px" }}>
+      <header className="app-header" style={{ borderBottom: `1px solid ${T.line}`, background: T.panel }}>
+        <div className="topbar" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 14, padding: "14px 20px 10px" }}>
           <h1 style={{ fontSize: 20 }}>Portfolio-Cockpit</h1>
-          <span className="lbl">
+          <span className="lbl topbar-meta">
             {state.quoteMeta
               ? `Kurse abgeglichen ${new Date(state.quoteMeta.at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} · ${state.quoteMeta.n} Titel`
               : `Kursstand ${D.kpi.lastRun} aus der Arbeitsmappe`}
             {" · keine automatische Orderausführung"}
           </span>
-          <button onClick={() => setTab("kurse")} style={{ border: `1px solid ${T.line}`, background: "none", padding: "3px 9px", borderRadius: 3, fontSize: 12 }}>Kurse abgleichen</button>
-          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          <button className="syncbtn" onClick={() => setTab("kurse")} style={{ border: `1px solid ${T.line}`, background: "none", padding: "3px 9px", borderRadius: 3, fontSize: 12 }}>Kurse abgleichen</button>
+          <span className="storagebar" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {saved && <span className="lbl" style={{ color: T.buy }}>{saved}</span>}
             {!saved && (
               <span className="lbl" style={{ color: storageStatus === "offline" ? T.reduce : T.muted }}>
@@ -1627,24 +1676,24 @@ export default function PortfolioCockpit() {
             )}
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 20px 12px", flexWrap: "wrap" }}>
-          <span className="lbl" style={{ width: 128 }}>Marktszenario</span>
+        <div className="scenario" style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 20px 12px", flexWrap: "wrap" }}>
+          <span className="lbl scenario-label" style={{ width: 128 }}>Marktszenario</span>
           <input type="range" min={-40} max={40} step={1} value={state.shock} onChange={(e) => set({ shock: parseInt(e.target.value, 10) })} style={{ maxWidth: 320 }} aria-label="Alle Kurse verschieben" />
-          <span className="num" style={{ width: 64, fontWeight: 600, color: state.shock === 0 ? T.muted : state.shock < 0 ? T.buy : T.sell }}>
+          <span className="num scenario-value" style={{ width: 64, fontWeight: 600, color: state.shock === 0 ? T.muted : state.shock < 0 ? T.buy : T.sell }}>
             {state.shock > 0 ? "+" : ""}{state.shock} %
           </span>
-          <span className="lbl">verschiebt alle Kurse gleichzeitig – zum Testen, was ein Rücksetzer für Zonen, Gewichte und Kaufplan bedeutet</span>
+          <span className="lbl scenario-note">verschiebt alle Kurse gleichzeitig – zum Testen, was ein Rücksetzer für Zonen, Gewichte und Kaufplan bedeutet</span>
         </div>
       </header>
 
-      <div style={{ display: "flex", alignItems: "flex-start" }}>
+      <div className="app-shell" style={{ display: "flex", alignItems: "flex-start" }}>
         <nav className="rail" style={{ position: "sticky", top: 0, width: 168, flex: "0 0 auto", padding: "16px 0", borderRight: `1px solid ${T.line}`, height: "100vh" }}>
           {TABS.map(([k, l]) => (
             <button key={k} className="navbtn" aria-current={tab === k} onClick={() => setTab(k)}>{l}</button>
           ))}
         </nav>
 
-        <main style={{ flex: 1, minWidth: 0, padding: "20px 22px 60px" }}>
+        <main className="app-main" style={{ flex: 1, minWidth: 0, padding: "20px 22px 60px" }}>
           {tab === "cockpit" && <Cockpit m={m} open={open} selected={sel} go={setTab} />}
           {tab === "depot" && <Depot m={m} open={open} selected={sel} />}
           {tab === "zonen" && <Zonen m={m} open={open} selected={sel} />}
