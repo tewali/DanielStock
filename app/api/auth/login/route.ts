@@ -1,14 +1,21 @@
 import { z } from 'zod';
 
-import { createSessionCookie, isPasswordConfigured, matchesPassword } from '@/lib/auth';
+import {
+  createSessionCookie,
+  isPasswordConfigured,
+  matchesPassword,
+} from '@/lib/auth';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 const loginSchema = z.object({ password: z.string().min(1).max(256) });
 
 export async function POST(request: Request) {
   if (!isPasswordConfigured()) {
-    return Response.json({ error: 'Dashboard password is not configured' }, { status: 503 });
+    return Response.json(
+      { error: 'Dashboard password is not configured' },
+      { status: 503 },
+    );
   }
 
   const parsed = loginSchema.safeParse(await request.json());
@@ -18,6 +25,11 @@ export async function POST(request: Request) {
 
   return Response.json(
     { ok: true },
-    { headers: { 'set-cookie': await createSessionCookie(), 'cache-control': 'no-store' } },
+    {
+      headers: {
+        'set-cookie': await createSessionCookie(),
+        'cache-control': 'no-store',
+      },
+    },
   );
 }
