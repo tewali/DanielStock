@@ -47,11 +47,11 @@ export default function LoginModal({ configured }: { configured: boolean }) {
     <main className="relative min-h-screen overflow-hidden bg-[#EDEFEA] text-[#17211E]">
       <div aria-hidden="true" className="absolute inset-0 opacity-50 blur-[2px]">
         <div className="h-16 border-b border-[#D5DAD3] bg-white" />
-        <div className="grid min-h-[calc(100vh-4rem)] grid-cols-[168px_1fr]">
-          <div className="border-r border-[#D5DAD3] bg-[#E9ECE7]" />
-          <div className="grid content-start gap-5 p-8">
+        <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 sm:grid-cols-[168px_1fr]">
+          <div className="hidden border-r border-[#D5DAD3] bg-[#E9ECE7] sm:block" />
+          <div className="grid content-start gap-4 p-4 sm:gap-5 sm:p-8">
             <div className="h-28 rounded-sm border border-[#D5DAD3] bg-white" />
-            <div className="grid grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-5">
               <div className="h-44 rounded-sm border border-[#D5DAD3] bg-white" />
               <div className="h-44 rounded-sm border border-[#D5DAD3] bg-white" />
               <div className="h-44 rounded-sm border border-[#D5DAD3] bg-white" />
@@ -63,9 +63,9 @@ export default function LoginModal({ configured }: { configured: boolean }) {
       <Dialog open>
         <DialogContent
           showCloseButton={false}
-          className="max-w-[420px] gap-0 overflow-hidden rounded-md border border-[#C9D0C9] bg-white p-0 shadow-[0_24px_80px_rgba(23,33,30,0.2)]"
+          className="max-w-[420px] gap-0 overflow-hidden rounded-md border border-[#C9D0C9] bg-white p-0 shadow-[0_24px_80px_rgba(23,33,30,0.2)] max-sm:w-[calc(100%-1.5rem)]"
         >
-          <DialogHeader className="gap-3 border-b border-[#E3E7E1] px-6 pb-5 pt-6">
+          <DialogHeader className="gap-3 border-b border-[#E3E7E1] px-5 pb-5 pt-5 sm:px-6 sm:pt-6">
             <div className="flex size-10 items-center justify-center rounded-full bg-[#E4E9F4] text-[#27407F]">
               <ShieldCheck className="size-5" aria-hidden="true" />
             </div>
@@ -77,7 +77,7 @@ export default function LoginModal({ configured }: { configured: boolean }) {
             </div>
           </DialogHeader>
 
-          <form onSubmit={submit} className="space-y-4 px-6 py-5">
+          <form onSubmit={submit} className="space-y-4 px-5 py-5 sm:px-6">
             <label className="grid gap-2 text-sm font-medium" htmlFor="dashboard-password">
               Passwort
               <div className="relative">
