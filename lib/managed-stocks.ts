@@ -1,7 +1,8 @@
 import type { Pool } from 'pg';
 
 import { database } from '@/lib/database';
-import { ensureMarketDataSchema } from '@/lib/market-data';
+import { ensureMarketDataSchema, refreshQuotes } from '@/lib/market-data';
+import { PORTFOLIO_ARTIFACT_STOCK_SEEDS } from '@/lib/portfolio-artifact-seed';
 
 export type StockAnalyticsPatch = {
   name?: string;
@@ -109,6 +110,52 @@ export async function ensureManagedStocksSchema(sql: Pool) {
   `);
 }
 
+async function seedPortfolioArtifactStocks(sql: Pool) {
+  const result = await sql.query<{ ticker: string }>(
+    `
+      INSERT INTO managed_stocks (
+        ticker, name, currency, sector, region, quality, moat, score,
+        fair_value, buy_below, hold_below, sell_above, expected_growth,
+        thesis, risk, research_source, research_date
+      )
+      SELECT
+        ticker, name, currency, sector, region, quality, moat, score,
+        fair_value, buy_below, hold_below, sell_above, expected_growth,
+        thesis, risk, research_source, research_date
+      FROM jsonb_to_recordset($1::jsonb) AS seed(
+        ticker text,
+        name text,
+        currency text,
+        sector text,
+        region text,
+        quality double precision,
+        moat double precision,
+        score double precision,
+        fair_value double precision,
+        buy_below double precision,
+        hold_below double precision,
+        sell_above double precision,
+        expected_growth double precision,
+        thesis text,
+        risk text,
+        research_source text,
+        research_date date
+      )
+      WHERE true
+      ON CONFLICT (ticker) DO NOTHING
+      RETURNING ticker
+    `,
+    [JSON.stringify(PORTFOLIO_ARTIFACT_STOCK_SEEDS)],
+  );
+  return result.rows.map((row) => row.ticker);
+}
+
+async function ensureManagedStocksReady(sql: Pool) {
+  await Promise.all([ensureManagedStocksSchema(sql), ensureMarketDataSchema(sql)]);
+  const insertedTickers = await seedPortfolioArtifactStocks(sql);
+  if (insertedTickers.length) await refreshQuotes(insertedTickers);
+}
+
 function iso(value: string | Date | null) {
   if (value === null) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -162,7 +209,7 @@ const SELECT_STOCK = `
 
 export async function listManagedStocks(includeRemoved = false) {
   const sql = requiredDatabase();
-  await Promise.all([ensureManagedStocksSchema(sql), ensureMarketDataSchema(sql)]);
+  await ensureManagedStocksReady(sql);
   const result = await sql.query<StockRow>(
     `${SELECT_STOCK}
      WHERE ($1::boolean OR NOT s.is_removed)
@@ -174,7 +221,7 @@ export async function listManagedStocks(includeRemoved = false) {
 
 export async function getManagedStock(ticker: string) {
   const sql = requiredDatabase();
-  await Promise.all([ensureManagedStocksSchema(sql), ensureMarketDataSchema(sql)]);
+  await ensureManagedStocksReady(sql);
   const result = await sql.query<StockRow>(
     `${SELECT_STOCK} WHERE s.ticker = $1`,
     [ticker],
