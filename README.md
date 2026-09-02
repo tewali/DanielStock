@@ -18,11 +18,34 @@ Yahoo garantiert weder Verfügbarkeit noch Aktualität dieses nicht offiziell un
 
 Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben auf den lokalen, nicht persistenten Modus hin.
 
+### Täglicher Kursabgleich
+
+Der geschützte Endpunkt `POST /api/cron/market-data` aktualisiert die aktuellen
+Kurse aller im Cockpit beobachteten Titel sowie aller aktiven MCP-Titel. Er
+akzeptiert ausschließlich `Authorization: Bearer <CRON_SECRET>`, nimmt keine
+Kurswerte entgegen und bezieht die Preise immer direkt von Yahoo Finance.
+Währungsabweichungen und Sprünge von mehr als 35 Prozent zum letzten Kurs werden
+nicht in den Portfoliozustand übernommen.
+
+In Coolify wird unter **Configuration → Scheduled Tasks** folgende Aufgabe
+angelegt:
+
+- Name: `Täglicher Kursabgleich`
+- Command: `npm run cron:refresh-prices`
+- Frequency: `0 7 * * *`
+- Timeout: `300`
+
+Coolify wertet den Ausdruck in der Zeitzone seines Servers aus. Für 07:00 Uhr
+lokaler Zeit muss der Server auf `Europe/Madrid` stehen. Zusätzlich müssen
+`APP_URL` und ein unabhängiges, langes `CRON_SECRET` als Laufzeitvariablen der
+Anwendung gesetzt sein. Nach der Einrichtung sollte die Aufgabe einmal über
+**Execute Now** getestet werden.
+
 ## MCP für die Portfolioverwaltung
 
 Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und verwendet OAuth 2.1 Authorization Code mit PKCE. ChatGPT entdeckt den Autorisierungsserver über RFC-9728-Metadaten, registriert sich dynamisch und öffnet anschließend die DanielStock-Freigabeseite. Das bestehende Dashboard-Passwort bestätigt dort den Zugriff. Access Tokens gelten eine Stunde; Refresh Tokens werden bei jeder Verwendung rotiert und nach 30 Tagen ungültig.
 
-Für die Produktion müssen `APP_URL=https://danielstock.apps.tewali.de`, `DATABASE_URL` und `DASHBOARD_PASSWORD` gesetzt sein. `MCP_API_KEY` ist nur noch eine optionale Übergangslösung für bereits verbundene Clients und kann entfernt werden, sobald diese auf OAuth umgestellt wurden.
+Für die Produktion müssen `APP_URL=https://danielstock.apps.tewali.de`, `DATABASE_URL`, `DASHBOARD_PASSWORD` und `CRON_SECRET` gesetzt sein. `MCP_API_KEY` ist nur noch eine optionale Übergangslösung für bereits verbundene Clients und kann entfernt werden, sobald diese auf OAuth umgestellt wurden.
 
 In ChatGPT Desktop wird der Server als Streamable HTTP mit OAuth hinzugefügt:
 
