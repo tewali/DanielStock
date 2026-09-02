@@ -144,7 +144,10 @@ const CSS = `
 @keyframes drawer-in { from { transform:translateX(20px); opacity:.6; } to { transform:translateX(0); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .ck * { transition:none !important; animation:none !important; } }
 @media (max-width: 820px) {
-  .ck { font-size:13.5px; min-height:100dvh !important; }
+  .ck { width:100%; max-width:100%; min-height:100dvh !important; overflow-x:clip; font-size:13.5px; }
+  .ck .app-header,.ck .app-shell,.ck .app-main { width:100%; min-width:0; max-width:100%; }
+  .ck .app-main > *,.ck section,.ck section > * { min-width:0; max-width:100%; }
+  .ck .panel { min-width:0; max-width:100%; overflow-wrap:anywhere; }
   .ck .app-header { position:relative; }
   .ck .topbar { align-items:flex-start !important; gap:8px 10px !important; padding:12px 12px 10px !important; }
   .ck .topbar h1 { font-size:19px !important; }
@@ -158,21 +161,22 @@ const CSS = `
   .ck .scenario input[type=range] { max-width:none !important; min-height:34px; }
   .ck .scenario-value { width:auto !important; align-self:center; }
   .ck .scenario-note { grid-column:1 / -1; }
-  .ck .app-shell { flex-direction:column; align-items:stretch !important; }
-  .ck .cols2 { grid-template-columns:1fr !important; gap:14px !important; }
-  .ck .rail { position:fixed !important; top:auto !important; left:0; right:0; bottom:0; z-index:30; width:100% !important; height:auto !important; display:flex !important; overflow-x:auto; padding:6px 8px calc(6px + env(safe-area-inset-bottom)) !important; border-right:0 !important; border-top:1px solid ${T.line}; border-bottom:0; background:rgba(255,255,255,.94); backdrop-filter:blur(18px); box-shadow:0 -8px 30px rgba(23,33,30,.08); scrollbar-width:none; }
+  .ck .app-shell { flex-direction:column; align-items:stretch !important; min-width:0; }
+  .ck .cols2 { width:100%; grid-template-columns:minmax(0,1fr) !important; gap:14px !important; }
+  .ck .cols2 > * { min-width:0; max-width:100%; }
+  .ck .rail { position:fixed !important; top:auto !important; left:0; right:auto; bottom:0; z-index:30; width:100vw !important; min-width:0 !important; max-width:100vw; height:auto !important; flex:none !important; display:flex !important; overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain; padding:6px 8px calc(6px + env(safe-area-inset-bottom)) !important; border-right:0 !important; border-top:1px solid ${T.line}; border-bottom:0; background:rgba(255,255,255,.94); backdrop-filter:blur(18px); box-shadow:0 -8px 30px rgba(23,33,30,.08); scrollbar-width:none; }
   .ck .rail::-webkit-scrollbar { display:none; }
   .ck .rail .navbtn { width:68px; min-height:54px; flex:0 0 68px; display:flex; flex-direction:column; justify-content:center; gap:3px; padding:5px 4px; border:1px solid transparent; border-radius:9px; white-space:nowrap; font-size:9.5px; text-align:center; }
   .ck .rail .navbtn svg { width:18px; height:18px; }
   .ck .rail .navbtn[aria-current=true] { border-color:rgba(39,64,127,.12); background:#EDF1F8; box-shadow:none; }
-  .ck .app-main { padding:14px 12px 108px !important; }
+  .ck .app-main { flex:none !important; padding:14px 12px 108px !important; overflow-x:clip; }
   .ck section { margin-bottom:20px !important; }
   .ck .section-head { align-items:flex-start !important; flex-direction:column; gap:8px !important; }
   .ck .section-head > * { max-width:100%; }
   .ck .kpi { flex:1 1 50% !important; min-width:50% !important; padding:11px 12px !important; border-bottom:1px solid ${T.line}; }
   .ck .kpi .num { font-size:18px !important; }
-  .ck .ladder { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  .ck .ladder svg { min-width:720px; }
+  .ck .ladder { width:100%; max-width:100%; contain:inline-size; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; }
+  .ck .ladder svg { width:720px !important; min-width:720px; max-width:none; }
   .ck .panel.scroll { max-height:calc(100dvh - 205px) !important; }
   .ck .scroll { -webkit-overflow-scrolling:touch; overscroll-behavior-inline:contain; }
   .ck .scroll table { min-width:760px; }
@@ -197,6 +201,10 @@ const CSS = `
   .ck .scenario-label { grid-column:1 / -1; }
   .ck .scenario input[type=range] { grid-column:1; }
   .ck .scenario-value { grid-column:2; }
+  .ck section [style*="grid-template-columns"] { grid-template-columns:minmax(0,1fr) !important; }
+  .ck .drawer [style*="grid-template-columns"] { grid-template-columns:minmax(0,1fr) !important; }
+  .ck .settings-code { align-items:stretch; flex-direction:column; }
+  .ck .settings-code .settings-action { width:100%; }
 }
 `;
 
