@@ -20,16 +20,21 @@ Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben a
 
 ## MCP für die Portfolioverwaltung
 
-Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und wird unabhängig vom Dashboard-Login mit `Authorization: Bearer <MCP_API_KEY>` geschützt. In der Produktion muss deshalb eine lange, zufällige Laufzeitvariable `MCP_API_KEY` gesetzt werden. Beispiel für einen lokalen MCP-Client:
+Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und verwendet OAuth 2.1 Authorization Code mit PKCE. ChatGPT entdeckt den Autorisierungsserver über RFC-9728-Metadaten, registriert sich dynamisch und öffnet anschließend die DanielStock-Freigabeseite. Das bestehende Dashboard-Passwort bestätigt dort den Zugriff. Access Tokens gelten eine Stunde; Refresh Tokens werden bei jeder Verwendung rotiert und nach 30 Tagen ungültig.
+
+Für die Produktion müssen `APP_URL=https://danielstock.apps.tewali.de`, `DATABASE_URL` und `DASHBOARD_PASSWORD` gesetzt sein. `MCP_API_KEY` ist nur noch eine optionale Übergangslösung für bereits verbundene Clients und kann entfernt werden, sobald diese auf OAuth umgestellt wurden.
+
+In ChatGPT Desktop wird der Server als Streamable HTTP mit OAuth hinzugefügt:
 
 ```json
 {
-  "url": "http://127.0.0.1:3000/api/mcp",
-  "headers": {
-    "Authorization": "Bearer <MCP_API_KEY>"
-  }
+  "name": "DanielStock",
+  "url": "https://danielstock.apps.tewali.de/api/mcp",
+  "authentication": "OAuth"
 }
 ```
+
+Nach dem Speichern startet ChatGPT automatisch die Anmeldung. Auf der Freigabeseite wird ausschließlich das Dashboard-Passwort eingegeben; es wird niemals an ChatGPT übermittelt.
 
 Der Server stellt `list_stocks`, `get_stock`, `add_stock`, `remove_stock`, `update_stock_analytics` und `refresh_stock_market_data` bereit. Hinzufügungen und Analytics-Änderungen erscheinen nach spätestens 60 Sekunden im geöffneten Dashboard; beim Neuladen sofort.
 

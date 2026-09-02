@@ -91,7 +91,7 @@ function failure(error: unknown) {
   };
 }
 
-export function createPortfolioMcpServer() {
+export function createPortfolioMcpServer(scopes: string[] = []) {
   const server = new McpServer({
     name: 'danielstock-portfolio-manager',
     version: '1.0.0',
@@ -109,6 +109,9 @@ export function createPortfolioMcpServer() {
       annotations: { readOnlyHint: true },
     },
     async ({ includeRemoved }) => {
+      if (!scopes.includes('stocks:read')) {
+        return failure(new Error('insufficient_scope: stocks:read is required'));
+      }
       try {
         return result({ stocks: await listManagedStocks(includeRemoved) });
       } catch (error) {
@@ -127,6 +130,9 @@ export function createPortfolioMcpServer() {
       annotations: { readOnlyHint: true },
     },
     async ({ ticker }) => {
+      if (!scopes.includes('stocks:read')) {
+        return failure(new Error('insufficient_scope: stocks:read is required'));
+      }
       try {
         const stock = await getManagedStock(ticker);
         return stock
@@ -148,6 +154,9 @@ export function createPortfolioMcpServer() {
       annotations: { idempotentHint: true },
     },
     async ({ ticker, ...metadata }) => {
+      if (!scopes.includes('stocks:write')) {
+        return failure(new Error('insufficient_scope: stocks:write is required'));
+      }
       try {
         const [market, historyResult] = await Promise.all([
           refreshQuotes([ticker]),
@@ -202,6 +211,9 @@ export function createPortfolioMcpServer() {
       annotations: { destructiveHint: true, idempotentHint: true },
     },
     async ({ ticker }) => {
+      if (!scopes.includes('stocks:write')) {
+        return failure(new Error('insufficient_scope: stocks:write is required'));
+      }
       try {
         return result({ stock: await removeManagedStock(ticker) });
       } catch (error) {
@@ -220,6 +232,9 @@ export function createPortfolioMcpServer() {
       annotations: { idempotentHint: true },
     },
     async ({ ticker, ...patch }) => {
+      if (!scopes.includes('stocks:write')) {
+        return failure(new Error('insufficient_scope: stocks:write is required'));
+      }
       try {
         const market = await refreshQuotes([ticker]);
         const quote = market.quotes.find((item) => item.ticker === ticker);
@@ -247,6 +262,9 @@ export function createPortfolioMcpServer() {
       annotations: { idempotentHint: true },
     },
     async ({ ticker }) => {
+      if (!scopes.includes('stocks:write')) {
+        return failure(new Error('insufficient_scope: stocks:write is required'));
+      }
       try {
         const [quotes, history] = await Promise.all([
           refreshQuotes([ticker]),
