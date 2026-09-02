@@ -1,7 +1,8 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import { z } from 'zod';
 
 import { isAuthenticated } from '@/lib/auth';
+import { database } from '@/lib/database';
 
 export const runtime = 'nodejs';
 
@@ -14,15 +15,6 @@ const stateSchema = z.object({
   quoteMeta: z.object({ at: z.string(), n: z.number() }).nullable(),
   params: z.record(z.string(), z.number()),
 });
-
-let pool: Pool | null = null;
-
-function database(): Pool | null {
-  const url = process.env.DATABASE_URL;
-  if (!url) return null;
-  pool ??= new Pool({ connectionString: url, max: 5 });
-  return pool;
-}
 
 async function ensureSchema(sql: Pool) {
   await sql.query(`

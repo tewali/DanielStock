@@ -1,6 +1,6 @@
 # Portfolio-Cockpit
 
-React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchlists. Die interaktiven Anpassungen werden in PostgreSQL gespeichert.
+React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchlists. Die interaktiven Anpassungen sowie aktuelle und historische Kurse werden in PostgreSQL gespeichert.
 
 ## Lokal starten
 
@@ -8,7 +8,13 @@ React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchli
 2. `npm install`
 3. `npm run dev`
 
-Die Tabelle wird beim ersten API-Aufruf idempotent angelegt. Das gleiche Schema liegt zusätzlich unter `db/migrations/0001_portfolio_state.sql`.
+Die Tabellen werden beim ersten API-Aufruf idempotent angelegt. Die gleichen Schemata liegen zusätzlich unter `db/migrations/0001_portfolio_state.sql` und `db/migrations/0002_market_data.sql`.
+
+## Kursdaten
+
+Der Kursabgleich nutzt serverseitig das freie, inoffizielle Yahoo-Finance-Interface über `yahoo-finance2`; ein API-Key ist nicht erforderlich. Aktuelle Kurse werden nach einer Plausibilitätsprüfung in das Modell übernommen. Beim Öffnen eines Titels lädt das Cockpit dessen tägliche Ein-Jahres-Historie und speichert sie für zwölf Stunden in PostgreSQL zwischen.
+
+Yahoo garantiert weder Verfügbarkeit noch Aktualität dieses nicht offiziell unterstützten Interfaces. Die Kurse dienen deshalb der Portfolioübersicht, nicht der Orderausführung. Manuelle Kurswerte und das Zurücksetzen auf die Arbeitsmappe bleiben verfügbar.
 
 Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben auf den lokalen, nicht persistenten Modus hin. Ohne `DASHBOARD_PASSWORD` bleibt der Zugang gesperrt.
 
