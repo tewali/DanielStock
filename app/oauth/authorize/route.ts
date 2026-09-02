@@ -30,10 +30,8 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;');
 }
 
-function pageResponse(body: string, status = 200, formActionOrigin?: string) {
-  const formAction = formActionOrigin
-    ? `'self' ${formActionOrigin}`
-    : "'self'";
+function pageResponse(body: string, status = 200, formActionOrigins: string[] = []) {
+  const formAction = ["'self'", ...new Set(formActionOrigins)].join(' ');
   return new Response(body, {
     status,
     headers: {
@@ -121,10 +119,11 @@ export async function GET(request: Request) {
     const input = await validateAuthorization(request, new URL(request.url).searchParams);
     if (typeof input === 'string') return pageResponse(`<h1>OAuth-Anfrage ungültig</h1><p>${escapeHtml(input)}</p>`, 400);
     const authorizationOrigin = oauthIssuer(request);
+    const callbackOrigin = new URL(input.redirectUri).origin;
     return pageResponse(
       renderConsent(input, authorizationOrigin),
       200,
-      authorizationOrigin,
+      [authorizationOrigin, callbackOrigin],
     );
   } catch (error) {
     return pageResponse(`<h1>OAuth nicht verfügbar</h1><p>${escapeHtml(error instanceof Error ? error.message : 'Unbekannter Fehler')}</p>`, 503);
@@ -147,6 +146,7 @@ export async function POST(request: Request) {
     const password = form.get('password');
     if (!isPasswordConfigured() || typeof password !== 'string' || !matchesPassword(password)) {
       const authorizationOrigin = oauthIssuer(request);
+      const callbackOrigin = new URL(input.redirectUri).origin;
       return pageResponse(
         renderConsent(
           input,
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
           'Das Dashboard-Passwort ist nicht korrekt.',
         ),
         401,
-        authorizationOrigin,
+        [authorizationOrigin, callbackOrigin],
       );
     }
 
