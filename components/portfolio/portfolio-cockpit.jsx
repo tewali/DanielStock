@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
-  BadgeDollarSign, BarChart3, Briefcase, ClipboardList, Eye,
-  LayoutDashboard, RefreshCw, SlidersHorizontal, Sparkles,
-  Target, TrendingUp, X,
+  BadgeDollarSign, BarChart3, Briefcase, Check, ClipboardList,
+  Clock3, Copy, Database, Eye, LayoutDashboard, Plug, RefreshCw,
+  Settings, SlidersHorizontal, Sparkles, Target, TrendingUp, X,
 } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
@@ -105,13 +105,33 @@ const CSS = `
 .ck .drawer-backdrop { position:fixed; inset:0; z-index:39; border:0; background:rgba(17,25,22,.25); backdrop-filter:blur(2px); }
 .ck .drawer-backdrop:active { transform:none; }
 .ck .drawer { border-radius:14px 0 0 14px; overflow:hidden; animation:drawer-in 180ms ease-out; }
+.ck .settings-button { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; margin-left:auto; border:1px solid ${T.line}; border-radius:9px; background:#F7F9F7; position:relative; }
+.ck .settings-button:hover { background:#EEF2EE; border-color:#AEB8AE; }
+.ck .settings-button svg { width:18px; height:18px; }
+.ck .settings-button .status-dot { position:absolute; right:3px; bottom:3px; width:6px; height:6px; box-shadow:0 0 0 2px ${T.panel}; }
+.ck .settings-backdrop { position:fixed; inset:0; z-index:49; border:0; background:rgba(17,25,22,.34); backdrop-filter:blur(3px); }
+.ck .settings-backdrop:active { transform:none; }
+.ck .settings-modal { position:fixed; z-index:50; top:50%; left:50%; width:min(620px, calc(100vw - 32px)); max-height:min(760px, calc(100dvh - 32px)); margin:0; padding:0; transform:translate(-50%,-50%); display:flex; flex-direction:column; color:inherit; background:${T.panel}; border:1px solid ${T.line}; border-radius:16px; box-shadow:0 24px 80px rgba(17,25,22,.22); overflow:hidden; animation:settings-in 160ms ease-out; }
+.ck .settings-modal-header { display:flex; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid ${T.line}; }
+.ck .settings-modal-body { padding:16px 18px 22px; overflow:auto; }
+.ck .settings-card { padding:14px; border:1px solid ${T.line}; border-radius:11px; background:#FAFBF9; }
+.ck .settings-card + .settings-card { margin-top:12px; }
+.ck .settings-card-head { display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; }
+.ck .settings-card-head > svg { width:18px; height:18px; margin-top:1px; color:${T.accent}; flex:0 0 auto; }
+.ck .settings-action { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:7px 11px; border:1px solid ${T.line}; border-radius:8px; background:${T.panel}; }
+.ck .settings-action:hover { border-color:#AEB8AE; background:#F3F6F2; }
+.ck .settings-action svg { width:14px; height:14px; }
+.ck .settings-code { display:flex; align-items:center; gap:8px; margin-top:9px; padding:8px 9px; border:1px solid ${T.line}; border-radius:8px; background:${T.panel}; }
+.ck .settings-code code { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
+@keyframes settings-in { from { transform:translate(-50%,-47%); opacity:.65; } to { transform:translate(-50%,-50%); opacity:1; } }
 @keyframes drawer-in { from { transform:translateX(20px); opacity:.6; } to { transform:translateX(0); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .ck * { transition:none !important; animation:none !important; } }
 @media (max-width: 820px) {
   .ck { font-size:13.5px; min-height:100dvh !important; }
   .ck .app-header { position:relative; }
   .ck .topbar { align-items:flex-start !important; gap:8px 10px !important; padding:12px 12px 10px !important; }
-  .ck .topbar h1 { width:100%; font-size:19px !important; }
+  .ck .topbar h1 { font-size:19px !important; }
+  .ck .brand { flex:1 1 auto; min-width:0; }
   .ck .topbar-meta { flex:1 1 calc(100% - 130px); line-height:1.35; }
   .ck .syncbtn { min-height:38px; padding:7px 10px !important; }
   .ck .storagebar { width:100%; margin-left:0 !important; justify-content:space-between; flex-wrap:wrap; gap:7px !important; }
@@ -148,6 +168,8 @@ const CSS = `
   .ck .drawer > div:first-child { padding:12px 14px !important; }
   .ck .drawer > div:first-child button { min-width:44px; min-height:44px; font-size:24px !important; }
   .ck .drawer .scroll { padding:12px 14px 28px !important; }
+  .ck .settings-modal { width:100vw; max-height:none; height:100dvh; border:0; border-radius:0; }
+  .ck .settings-modal-body { padding:14px 12px calc(28px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 480px) {
   .ck .kpi { flex-basis:100% !important; min-width:100% !important; border-right:0 !important; }
@@ -1760,6 +1782,110 @@ function Drawer({ ticker, m, state, set, close, data }) {
   );
 }
 
+function SettingsModal({ close, storageStatus, saved, openQuotes }) {
+  const mcpUrl = "https://danielstock.apps.tewali.de/api/mcp";
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [close]);
+
+  const copyMcpUrl = async () => {
+    await navigator.clipboard.writeText(mcpUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const statusText = storageStatus === "connecting"
+    ? "PostgreSQL wird verbunden"
+    : storageStatus === "saving"
+      ? "Änderungen werden gespeichert …"
+      : storageStatus === "offline"
+        ? "Lokaler Modus · Datenbank nicht verbunden"
+        : "PostgreSQL verbunden";
+
+  return (
+    <>
+      <button className="settings-backdrop" onClick={close} aria-label="Einstellungen schließen" />
+      <dialog open className="settings-modal" aria-labelledby="settings-title">
+        <div className="settings-modal-header">
+          <span className="brand-mark"><Settings aria-hidden="true" /></span>
+          <div style={{ flex: 1 }}>
+            <h2 id="settings-title" style={{ fontSize: 17 }}>Einstellungen</h2>
+            <div className="lbl">Datenquellen, Automatisierung und Verbindungen</div>
+          </div>
+          <button onClick={close} aria-label="Einstellungen schließen" style={{ width: 40, height: 40, border: 0, borderRadius: 8, background: "none" }}><X aria-hidden="true" /></button>
+        </div>
+
+        <div className="settings-modal-body">
+          <section className="settings-card">
+            <div className="settings-card-head">
+              <RefreshCw aria-hidden="true" />
+              <div>
+                <h3 style={{ fontSize: 14 }}>Kursabgleich</h3>
+                <div className="lbl">Aktuelle Kurse kommen ausschließlich von Yahoo Finance.</div>
+              </div>
+            </div>
+            <button className="settings-action" onClick={openQuotes}><RefreshCw aria-hidden="true" />Manuellen Kursabgleich öffnen</button>
+          </section>
+
+          <section className="settings-card">
+            <div className="settings-card-head">
+              <Clock3 aria-hidden="true" />
+              <div>
+                <h3 style={{ fontSize: 14 }}>Automatische Aktualisierung</h3>
+                <div className="lbl">Täglich um 07:00 Uhr · Coolify-Serverzeit Europe/Madrid</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 12.5 }}>Der tägliche Job aktualisiert alle beobachteten und MCP-verwalteten Titel. Währungsfehler und Kurssprünge über 35&nbsp;% werden nicht übernommen.</div>
+          </section>
+
+          <section className="settings-card">
+            <div className="settings-card-head">
+              <Database aria-hidden="true" />
+              <div>
+                <h3 style={{ fontSize: 14 }}>Datenspeicher</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                  <span className={`status-dot ${storageStatus === "connected" ? "connected" : storageStatus === "offline" ? "offline" : ""}`} />
+                  <span className="lbl" style={{ color: storageStatus === "offline" ? T.reduce : T.muted }}>{saved || statusText}</span>
+                </div>
+              </div>
+            </div>
+            <div className="lbl">Portfolioänderungen werden automatisch gespeichert.</div>
+          </section>
+
+          <section className="settings-card">
+            <div className="settings-card-head">
+              <Plug aria-hidden="true" />
+              <div>
+                <h3 style={{ fontSize: 14 }}>MCP-Verbindung</h3>
+                <div className="lbl">Streamable HTTP · OAuth 2.1 · Marktpreise sind schreibgeschützt</div>
+              </div>
+            </div>
+            <div className="settings-code">
+              <code>{mcpUrl}</code>
+              <button className="settings-action" onClick={copyMcpUrl} aria-label="MCP-Adresse kopieren">
+                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                {copied ? "Kopiert" : "Kopieren"}
+              </button>
+            </div>
+            <div className="lbl" style={{ marginTop: 8 }}>In ChatGPT als benutzerdefinierten Connector mit OAuth hinzufügen. Das Dashboard-Passwort wird erst auf der Freigabeseite eingegeben.</div>
+          </section>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 /* ── App ──────────────────────────────────────────────────────────────── */
 const TABS = [
   { key: "cockpit", label: "Cockpit", icon: LayoutDashboard },
@@ -1769,7 +1895,6 @@ const TABS = [
   { key: "optionen", label: "Optionen", icon: BadgeDollarSign },
   { key: "plan", label: "Kaufplan", icon: ClipboardList },
   { key: "growing", label: "Growing 50", icon: Sparkles },
-  { key: "kurse", label: "Kurse", icon: RefreshCw },
   { key: "watchlist", label: "Watchlist", icon: Eye },
   { key: "regeln", label: "Regeln", icon: SlidersHorizontal },
 ];
@@ -1783,6 +1908,7 @@ export default function PortfolioCockpit() {
   const [sel, setSel] = useState(null);
   const [saved, setSaved] = useState("");
   const [storageStatus, setStorageStatus] = useState("connecting");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const loaded = useRef(false);
 
   useEffect(() => {
@@ -1796,6 +1922,13 @@ export default function PortfolioCockpit() {
         const [payload, stocksPayload] = await Promise.all([response.json(), stocksResponse.json()]);
         if (payload.state) {
           setState((s) => ({ ...s, ...payload.state, params: { ...DEFAULTS, ...payload.state.params } }));
+        } else {
+          const initialSave = await fetch("/api/portfolio", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ state: INITIAL }),
+          });
+          if (!initialSave.ok) throw new Error("initial save failed");
         }
         setManagedStocks(stocksPayload.stocks || []);
         setStorageStatus("connected");
@@ -1857,11 +1990,6 @@ export default function PortfolioCockpit() {
   const m = useModel(state, data);
   const open = (t) => setSel(t);
 
-  const dirty =
-    Object.keys(state.growth).length + Object.keys(state.prices).length + Object.keys(state.mos).length +
-    (state.shock !== 0 ? 1 : 0) +
-    Object.keys(DEFAULTS).filter((k) => state.params[k] !== DEFAULTS[k]).length;
-
   return (
     <div className="ck" style={{ minHeight: "100vh" }}>
       <style>{CSS}</style>
@@ -1878,23 +2006,10 @@ export default function PortfolioCockpit() {
               : `Kursstand ${data.kpi.lastRun} aus der Arbeitsmappe`}
             {" · keine automatische Orderausführung"}
           </span>
-          <button className="syncbtn" onClick={() => setTab("kurse")} style={{ border: `1px solid ${T.line}`, background: "none", padding: "3px 9px", borderRadius: 3, fontSize: 12 }}><RefreshCw aria-hidden="true" />Kurse abgleichen</button>
-          <span className="storagebar" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-            {saved && <span className="lbl" style={{ color: T.buy }}>{saved}</span>}
-            {!saved && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <span className={`status-dot ${storageStatus === "connected" ? "connected" : storageStatus === "offline" ? "offline" : ""}`} />
-                <span className="lbl" style={{ color: storageStatus === "offline" ? T.reduce : T.muted }}>
-                {storageStatus === "connecting" ? "PostgreSQL wird verbunden" : storageStatus === "saving" ? "speichert …" : storageStatus === "offline" ? "lokaler Modus · Datenbank nicht verbunden" : "PostgreSQL verbunden"}
-                </span>
-              </span>
-            )}
-            {dirty > 0 && (
-              <button onClick={reset} style={{ border: `1px solid ${T.line}`, background: "none", padding: "4px 9px", borderRadius: 3, fontSize: 12 }}>
-                {dirty} Änderung(en) verwerfen
-              </button>
-            )}
-          </span>
+          <button className="settings-button" onClick={() => setSettingsOpen(true)} aria-label="Einstellungen öffnen" title="Einstellungen">
+            <Settings aria-hidden="true" />
+            <span className={`status-dot ${storageStatus === "connected" ? "connected" : storageStatus === "offline" ? "offline" : ""}`} />
+          </button>
         </div>
         <div className="scenario" style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 20px 12px", flexWrap: "wrap" }}>
           <span className="lbl scenario-label" style={{ width: 128 }}>Marktszenario</span>
@@ -1931,6 +2046,14 @@ export default function PortfolioCockpit() {
       </div>
 
       {sel && <Drawer ticker={sel} m={m} state={state} set={set} data={data} close={() => setSel(null)} />}
+      {settingsOpen && (
+        <SettingsModal
+          close={() => setSettingsOpen(false)}
+          storageStatus={storageStatus}
+          saved={saved}
+          openQuotes={() => { setSettingsOpen(false); setTab("kurse"); }}
+        />
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
+    "cron:refresh-prices": "node scripts/refresh-market-data.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },
