@@ -23,3 +23,5 @@ Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben a
 Die Produktionsanwendung läuft als Next.js-Node-Server auf Coolify. Sie nutzt
 eine private PostgreSQL-Datenbank im gleichen Coolify-Netzwerk; der
 `DATABASE_URL` wird ausschließlich als serverseitige Laufzeitvariable gesetzt.
+Coolify prüft `/api/health`; der Endpunkt meldet nur dann HTTP 200, wenn die
+Anwendung PostgreSQL erreichen kann.
