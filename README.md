@@ -4,7 +4,7 @@ React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchli
 
 ## Lokal starten
 
-1. `.env.example` als `.env.local` kopieren und `DATABASE_URL` mit einer PostgreSQL-Verbindungs-URL befüllen. Das gewünschte statische Dashboard-Passwort ist eingebaut; `DASHBOARD_PASSWORD` kann zusätzlich als zweites Passwort gesetzt werden.
+1. `.env.example` als `.env.local` kopieren und `DATABASE_URL` mit einer PostgreSQL-Verbindungs-URL befüllen. In der lokalen Entwicklungsumgebung kann das eingebaute Testpasswort verwendet werden; `DASHBOARD_PASSWORD` überschreibt es.
 2. `npm install`
 3. `npm run dev`
 
@@ -23,5 +23,8 @@ Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben a
 Die Produktionsanwendung läuft als Next.js-Node-Server auf Coolify. Sie nutzt
 eine private PostgreSQL-Datenbank im gleichen Coolify-Netzwerk; der
 `DATABASE_URL` wird ausschließlich als serverseitige Laufzeitvariable gesetzt.
+`DASHBOARD_PASSWORD` ist in Produktion verpflichtend und wird ebenfalls nur als
+verschlüsselte Coolify-Laufzeitvariable gesetzt; das lokale Testpasswort wird
+außerhalb der Entwicklungsumgebung nicht akzeptiert.
 Coolify prüft `/api/health`; der Endpunkt meldet nur dann HTTP 200, wenn die
 Anwendung PostgreSQL erreichen kann.

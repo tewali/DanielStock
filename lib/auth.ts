@@ -4,7 +4,10 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 const STATIC_DASHBOARD_PASSWORD = 'DanielsDashboard';
 
 function password() {
-  return process.env.DASHBOARD_PASSWORD || STATIC_DASHBOARD_PASSWORD;
+  if (process.env.DASHBOARD_PASSWORD) return process.env.DASHBOARD_PASSWORD;
+  return process.env.NODE_ENV === 'development'
+    ? STATIC_DASHBOARD_PASSWORD
+    : '';
 }
 
 async function sessionToken() {
@@ -46,11 +49,8 @@ export function isPasswordConfigured() {
 }
 
 export function matchesPassword(candidate: string) {
-  return (
-    candidate === STATIC_DASHBOARD_PASSWORD ||
-    (process.env.DASHBOARD_PASSWORD !== undefined &&
-      candidate === process.env.DASHBOARD_PASSWORD)
-  );
+  const configured = password();
+  return configured !== '' && candidate === configured;
 }
 
 export async function isAuthenticated(cookieHeader: string | null) {
