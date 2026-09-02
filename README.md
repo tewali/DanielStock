@@ -8,7 +8,7 @@ React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchli
 2. `npm install`
 3. `npm run dev`
 
-Die Tabellen werden beim ersten API-Aufruf idempotent angelegt. Die gleichen Schemata liegen zusätzlich unter `db/migrations/0001_portfolio_state.sql` und `db/migrations/0002_market_data.sql`.
+Die Tabellen werden beim ersten API-Aufruf idempotent angelegt. Die gleichen Schemata liegen zusätzlich unter `db/migrations/`.
 
 ## Kursdaten
 
@@ -17,6 +17,23 @@ Der Kursabgleich nutzt serverseitig das freie, inoffizielle Yahoo-Finance-Interf
 Yahoo garantiert weder Verfügbarkeit noch Aktualität dieses nicht offiziell unterstützten Interfaces. Die Kurse dienen deshalb der Portfolioübersicht, nicht der Orderausführung. Manuelle Kurswerte und das Zurücksetzen auf die Arbeitsmappe bleiben verfügbar.
 
 Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben auf den lokalen, nicht persistenten Modus hin.
+
+## MCP für die Portfolioverwaltung
+
+Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und wird unabhängig vom Dashboard-Login mit `Authorization: Bearer <MCP_API_KEY>` geschützt. In der Produktion muss deshalb eine lange, zufällige Laufzeitvariable `MCP_API_KEY` gesetzt werden. Beispiel für einen lokalen MCP-Client:
+
+```json
+{
+  "url": "http://127.0.0.1:3000/api/mcp",
+  "headers": {
+    "Authorization": "Bearer <MCP_API_KEY>"
+  }
+}
+```
+
+Der Server stellt `list_stocks`, `get_stock`, `add_stock`, `remove_stock`, `update_stock_analytics` und `refresh_stock_market_data` bereit. Hinzufügungen und Analytics-Änderungen erscheinen nach spätestens 60 Sekunden im geöffneten Dashboard; beim Neuladen sofort.
+
+Alle schreibenden Eingabeschemas sind strikt und enthalten kein Feld für den aktuellen Marktpreis. Zusätzliche Felder wie `price` oder `currentPrice` werden abgewiesen. `add_stock` und `refresh_stock_market_data` beziehen den aktuellen Kurs ausschließlich serverseitig von Yahoo Finance. Fair Value sowie Kauf-, Halte- und Verkaufsschwellen sind bewusst editierbare Research-Annahmen und keine Marktpreise.
 
 ## Deployment
 

@@ -169,6 +169,83 @@ const pct = (n, d = 1) => (n === null || n === undefined || Number.isNaN(n) ? "�
 const sgn = (n, d = 1) => (n > 0 ? "+" : "") + pct(n, d);
 const price = (n, c) => (n >= 100 ? nf(n, 0) : n >= 1 ? nf(n, 2) : nf(n, 3)) + (c ? " " + c : "");
 
+function mergeManagedData(managedStocks) {
+  if (!managedStocks.length) return D;
+  const removed = new Set(managedStocks.filter((s) => s.isRemoved).map((s) => s.ticker));
+  const active = new Map(managedStocks.filter((s) => !s.isRemoved).map((s) => [s.ticker, s]));
+  const overlay = (base, stock) => ({
+    ...base,
+    name: stock.name ?? base.name,
+    ccy: stock.marketCurrency ?? stock.currency ?? base.ccy,
+    price: stock.currentMarketPrice ?? base.price,
+    quality: stock.quality ?? base.quality,
+    moat: stock.moat ?? base.moat,
+    score: stock.score ?? base.score,
+    fv: stock.fairValue ?? base.fv,
+    buy: stock.buyBelow ?? base.buy,
+    hold: stock.holdBelow ?? base.hold,
+    sell: stock.sellAbove ?? base.sell,
+    g: stock.expectedGrowth ?? base.g,
+    src: stock.researchSource ?? base.src,
+    managed: true,
+  });
+  const valuation = D.valuation
+    .filter((item) => !removed.has(item.ticker))
+    .map((item) => active.has(item.ticker) ? overlay(item, active.get(item.ticker)) : item);
+  const existing = new Set(valuation.map((item) => item.ticker));
+  active.forEach((stock, ticker) => {
+    if (existing.has(ticker) || !stock.currentMarketPrice) return;
+    const fair = stock.fairValue ?? stock.currentMarketPrice;
+    valuation.push(overlay({
+      ticker,
+      name: stock.name ?? ticker,
+      ccy: stock.marketCurrency ?? stock.currency ?? "USD",
+      price: stock.currentMarketPrice,
+      quality: stock.quality ?? 0,
+      moat: stock.moat ?? 0,
+      score: stock.score ?? stock.quality ?? 0,
+      fv: fair,
+      buy: stock.buyBelow ?? fair * 0.8,
+      hold: stock.holdBelow ?? fair * 1.1,
+      sell: stock.sellAbove ?? fair * 1.3,
+      g: stock.expectedGrowth ?? 0,
+      src: stock.researchSource ?? "#",
+    }, stock));
+  });
+  const matrix = { ...D.matrix };
+  active.forEach((stock, ticker) => {
+    if (!stock.thesis && !stock.risk && !stock.researchDate) return;
+    matrix[ticker] = {
+      ...matrix[ticker],
+      thesis: stock.thesis ?? matrix[ticker]?.thesis,
+      risk: stock.risk ?? matrix[ticker]?.risk,
+      date: stock.researchDate ?? matrix[ticker]?.date,
+    };
+  });
+  const addedUniverse = [...active.values()]
+    .filter((stock) => !D.universe.some((item) => item.ticker === stock.ticker))
+    .map((stock) => ({
+      u: "MCP",
+      ticker: stock.ticker,
+      name: stock.name ?? stock.ticker,
+      region: stock.region ?? "–",
+      sector: stock.sector ?? "–",
+      q: stock.quality ?? stock.score ?? 0,
+      verdict: "MCP",
+      moat: stock.thesis ?? "MCP-verwalteter Titel",
+    }));
+  return {
+    ...D,
+    valuation,
+    portfolio: D.portfolio.filter((item) => !removed.has(item.ticker)),
+    watch: D.watch.filter((item) => !removed.has(item.ticker)),
+    gcp: D.gcp.filter((item) => !removed.has(item.ticker)),
+    grow: D.grow.filter((item) => !removed.has(item.ticker)),
+    universe: [...D.universe.filter((item) => !removed.has(item.ticker)), ...addedUniverse],
+    matrix,
+  };
+}
+
 /* ── Model engine ─────────────────────────────────────────────────────── */
 const DEFAULTS = {
   eurusd: D.rules["EUR je USD"],
@@ -194,13 +271,13 @@ const DEFAULTS = {
 const maxWeightFor = (q, p) =>
   q === null || q === undefined ? p.tRest : q >= 90 ? p.t90 : q >= 85 ? p.t85 : q >= 80 ? p.t80 : q >= 70 ? p.t70 : p.tRest;
 
-function useModel(state) {
+function useModel(state, data) {
   const { growth, prices, shock, mos, params: p } = state;
   const mkt = 1 + shock / 100;
 
   const valuation = useMemo(
     () =>
-      D.valuation.map((v) => {
+      data.valuation.map((v) => {
         const g = growth[v.ticker] ?? v.g;
         const f = Math.pow((1 + g) / (1 + v.g), 10);
         const buy = v.buy * f, hold = v.hold * f, sell = v.sell * f, fv = v.fv * f;
@@ -217,13 +294,13 @@ function useModel(state) {
           eligible: v.quality >= p.minQ && v.moat >= p.minMoat,
         };
       }),
-    [growth, prices, mkt, p.minQ, p.minMoat]
+    [data.valuation, growth, prices, mkt, p.minQ, p.minMoat]
   );
 
   const vmap = useMemo(() => Object.fromEntries(valuation.map((v) => [v.ticker, v])), [valuation]);
 
   const positions = useMemo(() => {
-    const rows = D.portfolio.map((q) => {
+    const rows = data.portfolio.map((q) => {
       const v = vmap[q.ticker];
       const localBase = q.shares > 0 ? q.mv / q.shares : q.priceEur;
       const mult = v ? v.mult : ((prices[q.ticker] ?? localBase) / localBase) * mkt;
@@ -260,7 +337,7 @@ function useModel(state) {
       if (opt) gate = r.ticker === "ADBE" ? "EVENT-GATE: Earnings 10.09." : "Live-Kette, Spread und OI prüfen";
       return { ...r, w, maxW, gap: w - maxW, action, opt, contracts, strike, bind, gate, us, buyT, sellT };
     }).sort((a, b) => b.mv - a.mv);
-  }, [vmap, mkt, p, prices]);
+  }, [data.portfolio, vmap, mkt, p, prices]);
 
   const totals = useMemo(() => {
     const depot = positions.reduce((a, r) => a + r.mv, 0);
@@ -272,15 +349,15 @@ function useModel(state) {
 
   const gcRows = useMemo(
     () =>
-      D.gcp.map((r0) => {
+      data.gcp.map((r0) => {
         const r = { ...r0, mosBuy: mos[r0.ticker] ?? r0.mosBuy };
-        const meta = D.grow.find((g) => g.ticker === r.ticker) || {};
+        const meta = data.grow.find((g) => g.ticker === r.ticker) || {};
         const px = (prices[r0.ticker] ?? r.price) * mkt;
         const strong = r.fv * (1 - Math.max(r.mosStrong, r.mosBuy)), buy = r.fv * (1 - r.mosBuy), red = r.fv * (1 + r.prem);
         const signal = px <= strong ? "STARK KAUFEN" : px <= buy ? "KAUFEN" : px >= red ? "REDUZIEREN" : "HALTEN";
         return { ...r, px, strong, buy, red, signal, dist: px / buy - 1, score: meta.score, sector: meta.sector, region: meta.region, arche: meta.arche, dyn: meta.dyn, risk: meta.risk, lastSignal: meta.signal, g: meta.g };
       }),
-    [mkt, mos, prices]
+    [data.gcp, data.grow, mkt, mos, prices]
   );
 
   const plan = useMemo(() => {
@@ -338,19 +415,19 @@ function useModel(state) {
   const options = useMemo(() => positions.filter((r) => r.opt), [positions]);
 
   const checks = useMemo(() => {
-    const wl = D.watch.filter((w) => w.quality >= p.minQ).length;
+    const wl = data.watch.filter((w) => w.quality >= p.minQ).length;
     const overBuys = plan.rows.filter((r) => r.today > 0 && r.cur >= r.max).length;
     const putCash = options.filter((o) => o.opt === "PUT").reduce((a, o) => a + o.bind, 0);
     return [
-      { k: "Watchlist-Grenze", is: D.watch.length, soll: p.maxWatch, ok: D.watch.length <= p.maxWatch, note: "Harte Obergrenze" },
-      { k: "Mindestqualität Watchlist", is: wl, soll: D.watch.length, ok: wl === D.watch.length, note: "Nur aktive Watchlist" },
+      { k: "Watchlist-Grenze", is: data.watch.length, soll: p.maxWatch, ok: data.watch.length <= p.maxWatch, note: "Harte Obergrenze" },
+      { k: "Mindestqualität Watchlist", is: wl, soll: data.watch.length, ok: wl === data.watch.length, note: "Nur aktive Watchlist" },
       { k: "Options-Budget alle Puts", is: putCash, soll: p.optionsCash, ok: putCash <= p.optionsCash, note: "volle Cashdeckung", money: true },
       { k: "Tagesbudget eingehalten", is: plan.spent, soll: plan.budget, ok: plan.spent <= plan.budget + 0.01, note: "Vorgeschlagene Käufe ≤ Tagesbudget", money: true },
       { k: "Max. Käufe eingehalten", is: plan.orders, soll: p.maxBuys, ok: plan.orders <= p.maxBuys, note: "Anzahl Orders" },
       { k: "Keine Käufe über Max-Gewicht", is: overBuys, soll: 0, ok: overBuys === 0, note: "Heute EUR muss null sein" },
       { k: "Offene Depotbewertungen", is: positions.filter((r) => r.status === "PRÜFEN").length, soll: 0, ok: positions.every((r) => r.status !== "PRÜFEN"), note: "keine grauen Positionen" },
     ];
-  }, [plan, options, p, positions]);
+  }, [data.watch, plan, options, p, positions]);
 
   return { valuation, vmap, positions, totals, gcRows, plan, options, checks };
 }
@@ -717,7 +794,7 @@ function Zonen({ m, open, selected }) {
 }
 
 /* ── View: Wachstum (die einzige Modelleingabe) ───────────────────────── */
-function Wachstum({ m, state, set }) {
+function Wachstum({ m, state, set, data }) {
   const [q, setQ] = useState("");
   const rows = m.valuation.filter((v) => (v.name + v.ticker).toLowerCase().includes(q.toLowerCase()));
   const nChanged = Object.keys(state.growth).length;
@@ -751,7 +828,7 @@ function Wachstum({ m, state, set }) {
           </thead>
           <tbody>
             {rows.map((v) => {
-              const base = D.valuation.find((x) => x.ticker === v.ticker);
+              const base = data.valuation.find((x) => x.ticker === v.ticker);
               const baseStatus = (() => {
                 const px = (state.prices[v.ticker] ?? base.price) * (1 + state.shock / 100);
                 return px <= base.buy ? "NACHKAUFEN" : px <= base.hold ? "HALTEN" : px >= base.sell ? "VERKAUFEN" : "REDUZIEREN";
@@ -954,16 +1031,16 @@ function Kaufplan({ m, state, set, open }) {
 }
 
 /* ── View: Watchlist & Universum ──────────────────────────────────────── */
-function Watchlist({ m }) {
+function Watchlist({ data }) {
   const [tab, setTab] = useState("watch");
   const [q, setQ] = useState("");
   const [reg, setReg] = useState("ALLE");
   const [sort, setSort] = useState({ k: "q", d: -1 });
-  const uni = D.universe;
+  const uni = data.universe;
   const regions = ["ALLE", ...Array.from(new Set(uni.map((u) => u.region).filter(Boolean))).sort()];
   const filtered = uni.filter((u) => (reg === "ALLE" || u.region === reg) && (u.name + u.ticker + (u.sector || "")).toLowerCase().includes(q.toLowerCase()));
   const uniSorted = useSorted(filtered, sort);
-  const held = new Set(D.portfolio.map((p) => p.ticker));
+  const held = new Set(data.portfolio.map((p) => p.ticker));
 
   return (
     <Section
@@ -988,7 +1065,7 @@ function Watchlist({ m }) {
           <table>
             <thead><tr><th style={{ width: 34 }}>#</th><th style={{ width: 96 }}>Ticker</th><th>Unternehmen</th><th className="r" style={{ width: 70 }}>Qualität</th><th style={{ width: 150 }}>Herkunft</th><th>Kern des Burggrabens</th><th style={{ width: 130 }}>Research</th></tr></thead>
             <tbody>
-              {D.watch.map((w) => (
+              {data.watch.map((w) => (
                 <tr key={w.ticker}>
                   <td className="num" style={{ color: T.faint }}>{w.rank}</td>
                   <td className="tick">{w.ticker}</td>
@@ -1200,23 +1277,23 @@ function Regeln({ state, set, reset, m }) {
 }
 
 /* ── Kursabgleich ─────────────────────────────────────────────────────── */
-const QUOTE_UNIVERSE = () => {
+const QUOTE_UNIVERSE = (data) => {
   const list = [];
   const seen = new Set();
-  D.valuation.forEach((v) => { seen.add(v.ticker); list.push({ ticker: v.ticker, name: v.name, ccy: v.ccy, base: v.price, group: "Bewertung" }); });
-  D.portfolio.forEach((p) => {
+  data.valuation.forEach((v) => { seen.add(v.ticker); list.push({ ticker: v.ticker, name: v.name, ccy: v.ccy, base: v.price, group: "Bewertung" }); });
+  data.portfolio.forEach((p) => {
     if (seen.has(p.ticker)) return;
     seen.add(p.ticker);
     if (p.ccy === "EUR") list.push({ ticker: p.ticker, name: p.name, ccy: "EUR", base: p.priceEur, group: "Depot" });
   });
-  D.gcp.forEach((g) => { if (seen.has(g.ticker)) return; seen.add(g.ticker); list.push({ ticker: g.ticker, name: g.name, ccy: g.ccy, base: g.price, group: "Growing" }); });
+  data.gcp.forEach((g) => { if (seen.has(g.ticker)) return; seen.add(g.ticker); list.push({ ticker: g.ticker, name: g.name, ccy: g.ccy, base: g.price, group: "Growing" }); });
   return list;
 };
 
 const DEV_LIMIT = 0.35;
 
-function Kurse({ state, set }) {
-  const uni = useMemo(() => QUOTE_UNIVERSE(), []);
+function Kurse({ state, set, data }) {
+  const uni = useMemo(() => QUOTE_UNIVERSE(data), [data]);
   const [scope, setScope] = useState("bewertung");
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState({});
@@ -1532,13 +1609,13 @@ function PriceHistoryChart({ ticker, expectedCurrency }) {
   );
 }
 
-function Drawer({ ticker, m, state, set, close }) {
+function Drawer({ ticker, m, state, set, close, data }) {
   const v = m.vmap[ticker];
   const pos = m.positions.find((p) => p.ticker === ticker);
-  const mx = D.matrix[ticker];
-  const wl = D.watch.find((w) => w.ticker === ticker);
+  const mx = data.matrix[ticker];
+  const wl = data.watch.find((w) => w.ticker === ticker);
   const gc = m.gcRows.find((g) => g.ticker === ticker);
-  const base = D.valuation.find((x) => x.ticker === ticker);
+  const base = data.valuation.find((x) => x.ticker === ticker);
   const name = v?.name || pos?.name || wl?.name || gc?.name || ticker;
   useEffect(() => {
     const h = (e) => e.key === "Escape" && close();
@@ -1696,6 +1773,7 @@ const INITIAL = { growth: {}, prices: {}, mos: {}, shock: 0, priority: "abstand"
 
 export default function PortfolioCockpit() {
   const [state, setState] = useState(INITIAL);
+  const [managedStocks, setManagedStocks] = useState([]);
   const [tab, setTab] = useState("cockpit");
   const [sel, setSel] = useState(null);
   const [saved, setSaved] = useState("");
@@ -1703,20 +1781,39 @@ export default function PortfolioCockpit() {
   const loaded = useRef(false);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
-        const response = await fetch("/api/portfolio", { cache: "no-store" });
-        if (!response.ok) throw new Error("storage unavailable");
-        const payload = await response.json();
+        const [response, stocksResponse] = await Promise.all([
+          fetch("/api/portfolio", { cache: "no-store" }),
+          fetch("/api/stocks", { cache: "no-store" }),
+        ]);
+        if (!response.ok || !stocksResponse.ok) throw new Error("storage unavailable");
+        const [payload, stocksPayload] = await Promise.all([response.json(), stocksResponse.json()]);
         if (payload.state) {
-          setState((s) => ({ ...s, ...payload.state, params: { ...DEFAULTS, ...(payload.state.params || {}) } }));
+          setState((s) => ({ ...s, ...payload.state, params: { ...DEFAULTS, ...payload.state.params } }));
         }
+        setManagedStocks(stocksPayload.stocks || []);
         setStorageStatus("connected");
-      } catch (e) {
+      } catch {
         setStorageStatus("offline");
       }
       loaded.current = true;
     })();
+  }, []);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/stocks", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json();
+        setManagedStocks(payload.stocks || []);
+      } catch {
+        // Keep the last managed-stock snapshot during a transient outage.
+      }
+    };
+    const timer = setInterval(refresh, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -1733,7 +1830,7 @@ export default function PortfolioCockpit() {
         setStorageStatus("connected");
         setSaved("in PostgreSQL gespeichert");
         setTimeout(() => setSaved(""), 1400);
-      } catch (e) {
+      } catch {
         setStorageStatus("offline");
       }
     }, 600);
@@ -1747,11 +1844,12 @@ export default function PortfolioCockpit() {
       const response = await fetch("/api/portfolio", { method: "DELETE" });
       if (!response.ok) throw new Error("reset failed");
       setStorageStatus("connected");
-    } catch (e) {
+    } catch {
       setStorageStatus("offline");
     }
   };
-  const m = useModel(state);
+  const data = useMemo(() => mergeManagedData(managedStocks), [managedStocks]);
+  const m = useModel(state, data);
   const open = (t) => setSel(t);
 
   const dirty =
@@ -1772,7 +1870,7 @@ export default function PortfolioCockpit() {
           <span className="lbl topbar-meta">
             {state.quoteMeta
               ? `Kurse abgeglichen ${new Date(state.quoteMeta.at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} · ${state.quoteMeta.n} Titel`
-              : `Kursstand ${D.kpi.lastRun} aus der Arbeitsmappe`}
+              : `Kursstand ${data.kpi.lastRun} aus der Arbeitsmappe`}
             {" · keine automatische Orderausführung"}
           </span>
           <button className="syncbtn" onClick={() => setTab("kurse")} style={{ border: `1px solid ${T.line}`, background: "none", padding: "3px 9px", borderRadius: 3, fontSize: 12 }}><RefreshCw aria-hidden="true" />Kurse abgleichen</button>
@@ -1817,17 +1915,17 @@ export default function PortfolioCockpit() {
           {tab === "cockpit" && <Cockpit m={m} open={open} selected={sel} go={setTab} />}
           {tab === "depot" && <Depot m={m} open={open} selected={sel} />}
           {tab === "zonen" && <Zonen m={m} open={open} selected={sel} />}
-          {tab === "wachstum" && <Wachstum m={m} state={state} set={set} />}
+          {tab === "wachstum" && <Wachstum m={m} state={state} set={set} data={data} />}
           {tab === "optionen" && <Optionen m={m} state={state} set={set} open={open} />}
           {tab === "plan" && <Kaufplan m={m} state={state} set={set} open={open} />}
           {tab === "growing" && <Growing m={m} state={state} set={set} />}
-          {tab === "kurse" && <Kurse state={state} set={set} />}
-          {tab === "watchlist" && <Watchlist m={m} />}
+          {tab === "kurse" && <Kurse state={state} set={set} data={data} />}
+          {tab === "watchlist" && <Watchlist data={data} />}
           {tab === "regeln" && <Regeln state={state} set={set} reset={reset} m={m} />}
         </main>
       </div>
 
-      {sel && <Drawer ticker={sel} m={m} state={state} set={set} close={() => setSel(null)} />}
+      {sel && <Drawer ticker={sel} m={m} state={state} set={set} data={data} close={() => setSel(null)} />}
     </div>
   );
 }
