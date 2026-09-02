@@ -4,7 +4,7 @@ React-Web-App für Depotgewichtung, Kaufzonen, Optionen, Kaufplanung und Watchli
 
 ## Lokal starten
 
-1. `.env.example` als `.env.local` kopieren, `DASHBOARD_PASSWORD` setzen und `DATABASE_URL` mit einer PostgreSQL-Verbindungs-URL befüllen.
+1. `.env.example` als `.env.local` kopieren und `DATABASE_URL` mit einer PostgreSQL-Verbindungs-URL befüllen. Das gewünschte statische Dashboard-Passwort ist eingebaut; `DASHBOARD_PASSWORD` kann zusätzlich als zweites Passwort gesetzt werden.
 2. `npm install`
 3. `npm run dev`
 
@@ -16,7 +16,7 @@ Der Kursabgleich nutzt serverseitig das freie, inoffizielle Yahoo-Finance-Interf
 
 Yahoo garantiert weder Verfügbarkeit noch Aktualität dieses nicht offiziell unterstützten Interfaces. Die Kurse dienen deshalb der Portfolioübersicht, nicht der Orderausführung. Manuelle Kurswerte und das Zurücksetzen auf die Arbeitsmappe bleiben verfügbar.
 
-Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben auf den lokalen, nicht persistenten Modus hin. Ohne `DASHBOARD_PASSWORD` bleibt der Zugang gesperrt.
+Ohne `DATABASE_URL` bleibt das Cockpit vollständig bedienbar, weist aber oben auf den lokalen, nicht persistenten Modus hin.
 
 ## Deployment
 

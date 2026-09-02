@@ -1,9 +1,10 @@
 const COOKIE_NAME = 'portfolio_session';
 const SESSION_PAYLOAD = 'portfolio-cockpit-access-v1';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+const STATIC_DASHBOARD_PASSWORD = 'DanielsDashboard';
 
 function password() {
-  return process.env.DASHBOARD_PASSWORD ?? '';
+  return process.env.DASHBOARD_PASSWORD || STATIC_DASHBOARD_PASSWORD;
 }
 
 async function sessionToken() {
@@ -45,7 +46,11 @@ export function isPasswordConfigured() {
 }
 
 export function matchesPassword(candidate: string) {
-  return password() !== '' && candidate === password();
+  return (
+    candidate === STATIC_DASHBOARD_PASSWORD ||
+    (process.env.DASHBOARD_PASSWORD !== undefined &&
+      candidate === process.env.DASHBOARD_PASSWORD)
+  );
 }
 
 export async function isAuthenticated(cookieHeader: string | null) {
