@@ -1,5 +1,6 @@
 import { isAuthenticated } from '@/lib/auth';
 import { listManagedStocks } from '@/lib/managed-stocks';
+import { listWatchlist } from '@/lib/portfolio-research';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,7 +11,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    return Response.json({ stocks: await listManagedStocks(true) });
+    const [stocks, watchlist] = await Promise.all([
+      listManagedStocks(true),
+      listWatchlist(true),
+    ]);
+    return Response.json({ stocks, watchlist });
   } catch (error) {
     return Response.json(
       {

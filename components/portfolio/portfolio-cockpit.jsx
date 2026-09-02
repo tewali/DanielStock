@@ -236,8 +236,8 @@ const EVALUATION_LABELS = {
   product: "Produkt",
 };
 
-function mergeManagedData(managedStocks) {
-  if (!managedStocks.length) return D;
+function mergeManagedData(managedStocks, managedWatchlist = []) {
+  if (!managedStocks.length && !managedWatchlist.length) return D;
   const removed = new Set(managedStocks.filter((s) => s.isRemoved).map((s) => s.ticker));
   const active = new Map(managedStocks.filter((s) => !s.isRemoved).map((s) => [s.ticker, s]));
   const overlay = (base, stock) => ({
@@ -310,11 +310,33 @@ function mergeManagedData(managedStocks) {
       verdict: "MCP",
       moat: stock.thesis ?? "MCP-verwalteter Titel",
     }));
+  const managedByTicker = new Map(managedStocks.map((stock) => [stock.ticker, stock]));
+  const originalWatch = new Map(D.watch.map((item) => [item.ticker, item]));
+  const watch = managedWatchlist.length
+    ? managedWatchlist
+        .filter((item) => !item.isRemoved && !removed.has(item.ticker))
+        .map((item) => {
+          const base = originalWatch.get(item.ticker) || {};
+          const stock = managedByTicker.get(item.ticker) || {};
+          return {
+            ...base,
+            ticker: item.ticker,
+            name: item.name ?? stock.name ?? base.name ?? item.ticker,
+            origin: item.origin ?? base.origin ?? "MCP",
+            rank: item.rank ?? base.rank ?? item.priority ?? 999,
+            status: item.status ?? base.status ?? "AUSSTEHEND",
+            zone: item.zone ?? base.zone ?? "PRÜFEN",
+            quality: item.quality ?? stock.quality ?? base.quality ?? 0,
+            moat: item.moatCommentary ?? base.moat ?? item.notes ?? "",
+          };
+        })
+        .sort((a, b) => a.rank - b.rank || a.ticker.localeCompare(b.ticker))
+    : D.watch.filter((item) => !removed.has(item.ticker));
   return {
     ...D,
     valuation,
     portfolio: D.portfolio.filter((item) => !removed.has(item.ticker)),
-    watch: D.watch.filter((item) => !removed.has(item.ticker)),
+    watch,
     gcp: D.gcp.filter((item) => !removed.has(item.ticker)),
     grow: D.grow.filter((item) => !removed.has(item.ticker)),
     universe: [...D.universe.filter((item) => !removed.has(item.ticker)), ...addedUniverse],
@@ -2096,6 +2118,7 @@ const INITIAL = { growth: {}, prices: {}, mos: {}, shock: 0, priority: "abstand"
 export default function PortfolioCockpit() {
   const [state, setState] = useState(INITIAL);
   const [managedStocks, setManagedStocks] = useState([]);
+  const [managedWatchlist, setManagedWatchlist] = useState([]);
   const [tab, setTab] = useState("cockpit");
   const [sel, setSel] = useState(null);
   const [saved, setSaved] = useState("");
@@ -2123,6 +2146,7 @@ export default function PortfolioCockpit() {
           if (!initialSave.ok) throw new Error("initial save failed");
         }
         setManagedStocks(stocksPayload.stocks || []);
+        setManagedWatchlist(stocksPayload.watchlist || []);
         setStorageStatus("connected");
       } catch {
         setStorageStatus("offline");
@@ -2138,6 +2162,7 @@ export default function PortfolioCockpit() {
         if (!response.ok) return;
         const payload = await response.json();
         setManagedStocks(payload.stocks || []);
+        setManagedWatchlist(payload.watchlist || []);
       } catch {
         // Keep the last managed-stock snapshot during a transient outage.
       }
@@ -2186,7 +2211,10 @@ export default function PortfolioCockpit() {
       setState((current) => ({ ...current, ...payload.state, params: { ...DEFAULTS, ...payload.state.params } }));
     }
   };
-  const data = useMemo(() => mergeManagedData(managedStocks), [managedStocks]);
+  const data = useMemo(
+    () => mergeManagedData(managedStocks, managedWatchlist),
+    [managedStocks, managedWatchlist],
+  );
   const m = useModel(state, data);
   const open = (t) => setSel(t);
 

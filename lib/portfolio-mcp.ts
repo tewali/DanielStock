@@ -2,12 +2,14 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import {
+  clearManagedStockFields,
   getManagedStock,
   listManagedStocks,
   removeManagedStock,
   updateManagedStockEvaluation,
   upsertManagedStock,
 } from '@/lib/managed-stocks';
+import { listChangeHistory } from '@/lib/portfolio-audit';
 import { getPriceHistory, refreshQuotes } from '@/lib/market-data';
 import {
   addTransaction,
@@ -29,6 +31,16 @@ import {
   listWatchlist,
   manageWatchlist,
 } from '@/lib/portfolio-research';
+import {
+  getScreeningMethodology,
+  getScreeningStock,
+  searchScreeningUniverse,
+} from '@/lib/portfolio-screening';
+import {
+  getPortfolioSettings,
+  getPurchasePlan,
+  updatePortfolioSettings,
+} from '@/lib/portfolio-settings';
 import {
   getMarketRefreshHistory,
   retryMarketRefresh,
@@ -86,6 +98,16 @@ const updateStockSchema = z
     name: z.string().trim().min(1).max(240).optional(),
     currency: z.string().trim().toUpperCase().length(3).optional(),
     ...analyticsShape,
+    clearFields: z
+      .array(
+        z.enum([
+          'sector', 'region', 'quality', 'moat', 'score', 'fairValue',
+          'buyBelow', 'holdBelow', 'sellAbove', 'expectedGrowth', 'thesis',
+          'risk', 'notes', 'researchSource', 'researchDate',
+        ]),
+      )
+      .min(1)
+      .optional(),
   })
   .strict()
   .refine(({ ticker: _ticker, ...patch }) => Object.keys(patch).length > 0, {
@@ -146,6 +168,12 @@ const updateTransactionSchema = z
     { message: 'Provide at least one transaction field to update' },
   );
 
+const evaluationScoreKeySchema = z.enum([
+  'market', 'competition', 'regulation', 'balanceSheet', 'margin', 'roe',
+  'fcf', 'management', 'ownership', 'capitalAllocation', 'businessModel',
+  'moat', 'brand', 'product',
+]);
+
 const evaluationScoresSchema = z
   .object({
     market: z.number().int().min(1).max(6).optional(),
@@ -167,6 +195,40 @@ const evaluationScoresSchema = z
   .refine((scores) => Object.keys(scores).length > 0, {
     message: 'Provide at least one evaluation score',
   });
+
+const portfolioParametersSchema = z
+  .object({
+    eurusd: z.number().positive().optional(),
+    optionsCash: z.number().min(0).optional(),
+    cash: z.number().min(0).optional(),
+    minQ: z.number().min(0).max(100).optional(),
+    minMoat: z.number().min(0).max(100).optional(),
+    maxWatch: z.number().int().min(1).max(1_000).optional(),
+    t90: z.number().min(0).max(1).optional(),
+    t85: z.number().min(0).max(1).optional(),
+    t80: z.number().min(0).max(1).optional(),
+    t70: z.number().min(0).max(1).optional(),
+    tRest: z.number().min(0).max(1).optional(),
+    dayLimit: z.number().min(0).max(1).optional(),
+    reserve: z.number().min(0).max(1).optional(),
+    trHigh: z.number().min(0).max(1).optional(),
+    trMid: z.number().min(0).max(1).optional(),
+    trLow: z.number().min(0).max(1).optional(),
+    maxBuys: z.number().int().min(0).max(100).optional(),
+    minOrder: z.number().min(0).optional(),
+  })
+  .strict();
+
+const portfolioParameterKeySchema = z.enum([
+  'eurusd', 'optionsCash', 'cash', 'minQ', 'minMoat', 'maxWatch', 't90',
+  't85', 't80', 't70', 'tRest', 'dayLimit', 'reserve', 'trHigh', 'trMid',
+  'trLow', 'maxBuys', 'minOrder',
+]);
+
+const tickerNumberRecordSchema = z.record(
+  tickerSchema,
+  z.number().min(-0.99).max(10),
+);
 
 function result(value: unknown) {
   const structuredContent = JSON.parse(JSON.stringify(value)) as Record<
@@ -284,23 +346,40 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       inputSchema: z
         .object({
           ticker: tickerSchema,
-          scores: evaluationScoresSchema,
+          scores: evaluationScoresSchema.optional(),
+          clearScores: z.array(evaluationScoreKeySchema).min(1).optional(),
           thesis: z.string().trim().min(1).max(10_000).optional(),
           risk: z.string().trim().min(1).max(10_000).optional(),
           researchSource: z.string().trim().min(1).max(2_000).optional(),
           researchDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          clearFields: z
+            .array(z.enum(['thesis', 'risk', 'researchSource', 'researchDate']))
+            .min(1)
+            .optional(),
         })
-        .strict(),
+        .strict()
+        .refine(
+          ({ ticker: _ticker, ...changes }) =>
+            Object.values(changes).some((value) => value !== undefined),
+          { message: 'Provide scores, fields to clear, or research changes' },
+        ),
       annotations: { idempotentHint: true },
     },
-    async ({ ticker, scores, ...research }) => {
+    async ({ ticker, scores, clearScores, clearFields, ...research }) => {
       if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
       try {
-        return result({
-          stock: await updateManagedStockEvaluation(ticker, {
+        if (scores || clearScores) {
+          await updateManagedStockEvaluation(ticker, {
             scores,
+            clearScores,
             ...research,
-          }),
+          });
+        } else if (Object.keys(research).length) {
+          await upsertManagedStock(ticker, research, 'update');
+        }
+        if (clearFields?.length) await clearManagedStockFields(ticker, clearFields);
+        return result({
+          stock: await getManagedStock(ticker),
         });
       } catch (error) {
         return failure(error);
@@ -395,7 +474,7 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       inputSchema: updateStockSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ ticker, ...patch }) => {
+    async ({ ticker, clearFields, ...patch }) => {
       if (!scopes.includes('stocks:write')) {
         return failure(new Error('insufficient_scope: stocks:write is required'));
       }
@@ -406,8 +485,10 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
           const detail = market.errors[0]?.error ?? 'No quote returned';
           throw new Error(`Yahoo Finance rejected ${ticker}: ${detail}`);
         }
+        if (Object.keys(patch).length) await upsertManagedStock(ticker, patch, 'update');
+        if (clearFields?.length) await clearManagedStockFields(ticker, clearFields);
         return result({
-          stock: await upsertManagedStock(ticker, patch, 'update'),
+          stock: await getManagedStock(ticker),
           marketDataSource: quote.source,
         });
       } catch (error) {
@@ -792,6 +873,13 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
           action: z.enum(['add', 'remove']),
           notes: z.string().trim().min(1).max(10_000).optional(),
           priority: z.number().int().min(1).max(5).optional(),
+          name: z.string().trim().min(1).max(240).optional(),
+          origin: z.string().trim().min(1).max(240).optional(),
+          rank: z.number().int().positive().optional(),
+          status: z.string().trim().min(1).max(240).optional(),
+          zone: z.string().trim().min(1).max(240).optional(),
+          quality: z.number().min(0).max(100).optional(),
+          moatCommentary: z.string().trim().min(1).max(10_000).optional(),
         })
         .strict(),
       annotations: { idempotentHint: true },
@@ -818,6 +906,227 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
       try {
         return result({ watchlist: await listWatchlist(includeRemoved) });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_portfolio_settings',
+    {
+      title: 'Get portfolio policy and scenario settings',
+      description:
+        'Returns portfolio limits, purchase-plan parameters, saved growth and margin-of-safety overrides, scenario shock, and ranking priority. Manual market-price overrides are deliberately excluded.',
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result(await getPortfolioSettings());
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'update_portfolio_settings',
+    {
+      title: 'Update portfolio policy and scenario settings',
+      description:
+        'Updates any subset of purchase-plan parameters, ranking priority, scenario shock, growth assumptions, or margin-of-safety assumptions. Yahoo prices cannot be supplied.',
+      inputSchema: z
+        .object({
+          parameters: portfolioParametersSchema.optional(),
+          priority: z.enum(['abstand', 'qualitaet', 'konfidenz']).optional(),
+          shockPercent: z.number().min(-40).max(40).optional(),
+          growthOverrides: tickerNumberRecordSchema.optional(),
+          marginOfSafetyOverrides: z
+            .record(tickerSchema, z.number().min(0).max(1))
+            .optional(),
+          clearGrowthOverrides: z.array(tickerSchema).min(1).optional(),
+          clearMarginOfSafetyOverrides: z.array(tickerSchema).min(1).optional(),
+          resetParameters: z.array(portfolioParameterKeySchema).min(1).optional(),
+        })
+        .strict()
+        .refine((input) => Object.keys(input).length > 0, {
+          message: 'Provide at least one portfolio setting',
+        }),
+      annotations: { idempotentHint: true },
+    },
+    async (input) => {
+      if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+      try {
+        return result(await updatePortfolioSettings(input));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  const planInputSchema = z
+    .object({
+      shockPercent: z.number().min(-40).max(40).optional(),
+      parameters: portfolioParametersSchema.optional(),
+      priority: z.enum(['abstand', 'qualitaet', 'konfidenz']).optional(),
+      growthOverrides: tickerNumberRecordSchema.optional(),
+      marginOfSafetyOverrides: z
+        .record(tickerSchema, z.number().min(0).max(1))
+        .optional(),
+    })
+    .strict();
+
+  server.registerTool(
+    'get_purchase_plan',
+    {
+      title: 'Get the current purchase and reduction plan',
+      description:
+        'Calculates buy, reduce, and sell candidates, daily allocations, policy checks, and option candidates from the ledger, saved settings, and immutable Yahoo prices.',
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result(await getPurchasePlan());
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'run_portfolio_scenario',
+    {
+      title: 'Run a non-persistent portfolio scenario',
+      description:
+        'Calculates the purchase plan under temporary price-shock, growth, margin-of-safety, policy, or ranking assumptions without saving them or changing Yahoo prices.',
+      inputSchema: planInputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async (input) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result(await getPurchasePlan(input));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_price_history',
+    {
+      title: 'Get Yahoo Finance price history',
+      description:
+        'Returns read-only daily OHLC, adjusted close, and volume bars from Yahoo Finance, optionally filtered by date. Prices cannot be supplied or edited.',
+      inputSchema: z
+        .object({
+          ticker: tickerSchema,
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          limit: z.number().int().min(1).max(366).optional().default(366),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ ticker, from, to, limit }) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        const history = await getPriceHistory(ticker);
+        const bars = history.bars
+          .filter((bar) => !from || bar.date >= from)
+          .filter((bar) => !to || bar.date <= to)
+          .slice(-limit);
+        return result({ ...history, bars, returnedBars: bars.length });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'search_screening_universe',
+    {
+      title: 'Search the quality screening universe',
+      description:
+        'Searches all 250 screened securities and joins available valuation, Growing 50, growth-valuation, and watchlist research fields.',
+      inputSchema: z
+        .object({
+          query: z.string().trim().min(1).max(240).optional(),
+          region: z.string().trim().min(1).max(120).optional(),
+          sector: z.string().trim().min(1).max(120).optional(),
+          verdict: z.string().trim().min(1).max(120).optional(),
+          minimumQuality: z.number().min(0).max(100).optional(),
+          growing50Only: z.boolean().optional().default(false),
+          watchlistOnly: z.boolean().optional().default(false),
+          limit: z.number().int().min(1).max(250).optional().default(50),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async (input) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result({ stocks: searchScreeningUniverse(input) });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_screening_stock',
+    {
+      title: 'Get complete screening research for one stock',
+      description:
+        'Returns the embedded screening, valuation, Growing 50, growth-valuation, and original watchlist record for one ticker.',
+      inputSchema: z.object({ ticker: tickerSchema }).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ ticker }) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      const stock = getScreeningStock(ticker);
+      return stock ? result({ stock }) : failure(new Error(`${ticker} is not in the screening universe`));
+    },
+  );
+
+  server.registerTool(
+    'get_screening_methodology',
+    {
+      title: 'Get screening methodology and policy definitions',
+      description:
+        'Returns the quality rules, Growing Companies factor model, kill criteria, workflow, evidence links, watchlist guidance, and plan legend.',
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      return result(getScreeningMethodology());
+    },
+  );
+
+  server.registerTool(
+    'list_change_history',
+    {
+      title: 'List immutable portfolio change history',
+      description:
+        'Reads stock, transaction, settings, watchlist, and append-only research events. Audit records cannot be edited or deleted through MCP.',
+      inputSchema: z
+        .object({
+          ticker: tickerSchema.optional(),
+          entityType: z.enum(['stock', 'transaction', 'settings', 'watchlist', 'research']).optional(),
+          limit: z.number().int().min(1).max(500).optional().default(100),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async (filters) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result({ events: await listChangeHistory(filters) });
       } catch (error) {
         return failure(error);
       }

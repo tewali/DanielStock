@@ -41,6 +41,23 @@ export type StockEvaluationScores = {
   product?: number;
 };
 
+export type StockAnalyticsClearField =
+  | 'sector'
+  | 'region'
+  | 'quality'
+  | 'moat'
+  | 'score'
+  | 'fairValue'
+  | 'buyBelow'
+  | 'holdBelow'
+  | 'sellAbove'
+  | 'expectedGrowth'
+  | 'thesis'
+  | 'risk'
+  | 'notes'
+  | 'researchSource'
+  | 'researchDate';
+
 export type ManagedStock = StockAnalyticsPatch & {
   ticker: string;
   isRemoved: boolean;
@@ -396,10 +413,62 @@ export async function removeManagedStock(ticker: string) {
   return getManagedStock(ticker);
 }
 
+const CLEARABLE_COLUMNS: Record<StockAnalyticsClearField, string> = {
+  sector: 'sector',
+  region: 'region',
+  quality: 'quality',
+  moat: 'moat',
+  score: 'score',
+  fairValue: 'fair_value',
+  buyBelow: 'buy_below',
+  holdBelow: 'hold_below',
+  sellAbove: 'sell_above',
+  expectedGrowth: 'expected_growth',
+  thesis: 'thesis',
+  risk: 'risk',
+  notes: 'notes',
+  researchSource: 'research_source',
+  researchDate: 'research_date',
+};
+
+export async function clearManagedStockFields(
+  ticker: string,
+  fields: StockAnalyticsClearField[],
+) {
+  if (!fields.length) return getManagedStock(ticker);
+  const sql = requiredDatabase();
+  await ensureManagedStocksSchema(sql);
+  const unique = [...new Set(fields)];
+  const assignments = unique.map((field) => `${CLEARABLE_COLUMNS[field]} = NULL`);
+  const client = await sql.connect();
+  await client.query('BEGIN');
+  try {
+    const result = await client.query(
+      `UPDATE managed_stocks SET ${assignments.join(', ')}, updated_at = now()
+       WHERE ticker = $1 RETURNING ticker`,
+      [ticker],
+    );
+    if (!result.rowCount) throw new Error(`No managed record exists for ${ticker}`);
+    await client.query(
+      `INSERT INTO managed_stock_events (ticker, action, changes)
+       VALUES ($1, 'update', $2::jsonb)`,
+      [ticker, JSON.stringify({ clearedFields: unique })],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return getManagedStock(ticker);
+}
+
 export async function updateManagedStockEvaluation(
   ticker: string,
   input: {
-    scores: StockEvaluationScores;
+    scores?: StockEvaluationScores;
+    clearScores?: Array<keyof StockEvaluationScores>;
     thesis?: string;
     risk?: string;
     researchSource?: string;
@@ -422,9 +491,11 @@ export async function updateManagedStockEvaluation(
       ...existingResult.rows[0].evaluation_scores,
       ...input.scores,
     };
+    for (const key of input.clearScores ?? []) delete scores[key];
     const values = Object.values(scores);
-    if (!values.length) throw new Error('At least one evaluation score is required');
-    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const average = values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : null;
     await client.query(
       `UPDATE managed_stocks SET
          evaluation_scores = $2::jsonb,
@@ -452,6 +523,7 @@ export async function updateManagedStockEvaluation(
         ticker,
         JSON.stringify({
           evaluationScores: input.scores,
+          clearedEvaluationScores: input.clearScores,
           evaluationAverage: average,
           thesis: input.thesis,
           risk: input.risk,

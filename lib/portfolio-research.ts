@@ -39,16 +39,43 @@ export async function ensurePortfolioResearchSchema(sql: Pool) {
       ticker text NOT NULL,
       notes text,
       priority integer CHECK (priority BETWEEN 1 AND 5),
+      name text,
+      origin text,
+      rank integer,
+      status text,
+      zone text,
+      quality double precision,
+      moat_commentary text,
       added_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
       removed_at timestamptz,
       PRIMARY KEY (portfolio_id, ticker)
     );
 
+    ALTER TABLE portfolio_watchlist
+      ADD COLUMN IF NOT EXISTS name text,
+      ADD COLUMN IF NOT EXISTS origin text,
+      ADD COLUMN IF NOT EXISTS rank integer,
+      ADD COLUMN IF NOT EXISTS status text,
+      ADD COLUMN IF NOT EXISTS zone text,
+      ADD COLUMN IF NOT EXISTS quality double precision,
+      ADD COLUMN IF NOT EXISTS moat_commentary text;
+
+    CREATE TABLE IF NOT EXISTS portfolio_watchlist_events (
+      id bigserial PRIMARY KEY,
+      portfolio_id text NOT NULL,
+      ticker text NOT NULL,
+      action text NOT NULL CHECK (action IN ('add', 'update', 'remove')),
+      changes jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE INDEX IF NOT EXISTS portfolio_research_notes_ticker_date_idx
       ON portfolio_research_notes (portfolio_id, ticker, research_date DESC, created_at DESC);
     CREATE INDEX IF NOT EXISTS portfolio_watchlist_active_idx
       ON portfolio_watchlist (portfolio_id, removed_at, priority, ticker);
+    CREATE INDEX IF NOT EXISTS portfolio_watchlist_events_ticker_date_idx
+      ON portfolio_watchlist_events (portfolio_id, ticker, created_at DESC);
   `);
   await seedWatchlist(sql);
 }
@@ -58,18 +85,50 @@ async function seedWatchlist(sql: Pool) {
     ticker: stock.ticker,
     notes: `${stock.name}: ${stock.status}. ${stock.moat}`,
     priority: stock.rank <= 10 ? 1 : stock.rank <= 25 ? 2 : 3,
+    name: stock.name,
+    origin: stock.origin,
+    rank: stock.rank,
+    status: stock.status,
+    zone: stock.zone,
+    quality: stock.quality,
+    moat_commentary: stock.moat,
   }));
   await sql.query(
     `
-      INSERT INTO portfolio_watchlist (portfolio_id, ticker, notes, priority)
-      SELECT $2, ticker, notes, priority
+      INSERT INTO portfolio_watchlist (
+        portfolio_id, ticker, notes, priority, name, origin, rank, status,
+        zone, quality, moat_commentary
+      )
+      SELECT $2, ticker, notes, priority, name, origin, rank, status,
+             zone, quality, moat_commentary
       FROM jsonb_to_recordset($1::jsonb) AS seed(
         ticker text,
         notes text,
-        priority integer
+        priority integer,
+        name text,
+        origin text,
+        rank integer,
+        status text,
+        zone text,
+        quality double precision,
+        moat_commentary text
       )
       WHERE true
-      ON CONFLICT (portfolio_id, ticker) DO NOTHING
+      ON CONFLICT (portfolio_id, ticker) DO UPDATE SET
+        name = COALESCE(portfolio_watchlist.name, EXCLUDED.name),
+        origin = COALESCE(portfolio_watchlist.origin, EXCLUDED.origin),
+        rank = COALESCE(portfolio_watchlist.rank, EXCLUDED.rank),
+        status = COALESCE(portfolio_watchlist.status, EXCLUDED.status),
+        zone = COALESCE(portfolio_watchlist.zone, EXCLUDED.zone),
+        quality = COALESCE(portfolio_watchlist.quality, EXCLUDED.quality),
+        moat_commentary = COALESCE(portfolio_watchlist.moat_commentary, EXCLUDED.moat_commentary)
+      WHERE portfolio_watchlist.name IS NULL
+         OR portfolio_watchlist.origin IS NULL
+         OR portfolio_watchlist.rank IS NULL
+         OR portfolio_watchlist.status IS NULL
+         OR portfolio_watchlist.zone IS NULL
+         OR portfolio_watchlist.quality IS NULL
+         OR portfolio_watchlist.moat_commentary IS NULL
     `,
     [JSON.stringify(rows), PORTFOLIO_ID],
   );
@@ -167,10 +226,22 @@ export async function manageWatchlist(input: {
   action: 'add' | 'remove';
   notes?: string;
   priority?: number;
+  name?: string;
+  origin?: string;
+  rank?: number;
+  status?: string;
+  zone?: string;
+  quality?: number;
+  moatCommentary?: string;
 }) {
   const sql = requiredDatabase();
   await ensurePortfolioResearchSchema(sql);
   const ticker = input.ticker.toUpperCase();
+  const existing = await sql.query<{ removed_at: Date | null }>(
+    `SELECT removed_at FROM portfolio_watchlist
+     WHERE portfolio_id = $1 AND ticker = $2`,
+    [PORTFOLIO_ID, ticker],
+  );
   if (input.action === 'remove') {
     await sql.query(
       `INSERT INTO portfolio_watchlist (portfolio_id, ticker, removed_at)
@@ -182,16 +253,51 @@ export async function manageWatchlist(input: {
   } else {
     await sql.query(
       `INSERT INTO portfolio_watchlist (
-         portfolio_id, ticker, notes, priority, removed_at
-       ) VALUES ($1, $2, $3, $4, NULL)
+         portfolio_id, ticker, notes, priority, name, origin, rank, status,
+         zone, quality, moat_commentary, removed_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULL)
        ON CONFLICT (portfolio_id, ticker) DO UPDATE SET
          notes = COALESCE(EXCLUDED.notes, portfolio_watchlist.notes),
          priority = COALESCE(EXCLUDED.priority, portfolio_watchlist.priority),
+         name = COALESCE(EXCLUDED.name, portfolio_watchlist.name),
+         origin = COALESCE(EXCLUDED.origin, portfolio_watchlist.origin),
+         rank = COALESCE(EXCLUDED.rank, portfolio_watchlist.rank),
+         status = COALESCE(EXCLUDED.status, portfolio_watchlist.status),
+         zone = COALESCE(EXCLUDED.zone, portfolio_watchlist.zone),
+         quality = COALESCE(EXCLUDED.quality, portfolio_watchlist.quality),
+         moat_commentary = COALESCE(EXCLUDED.moat_commentary, portfolio_watchlist.moat_commentary),
          removed_at = NULL,
          updated_at = now()`,
-      [PORTFOLIO_ID, ticker, input.notes ?? null, input.priority ?? null],
+      [
+        PORTFOLIO_ID,
+        ticker,
+        input.notes ?? null,
+        input.priority ?? null,
+        input.name ?? null,
+        input.origin ?? null,
+        input.rank ?? null,
+        input.status ?? null,
+        input.zone ?? null,
+        input.quality ?? null,
+        input.moatCommentary ?? null,
+      ],
     );
   }
+  await sql.query(
+    `INSERT INTO portfolio_watchlist_events (
+       portfolio_id, ticker, action, changes
+     ) VALUES ($1, $2, $3, $4::jsonb)`,
+    [
+      PORTFOLIO_ID,
+      ticker,
+      input.action === 'remove'
+        ? 'remove'
+        : existing.rows[0] && !existing.rows[0].removed_at
+          ? 'update'
+          : 'add',
+      JSON.stringify(input),
+    ],
+  );
   return getWatchlistItem(ticker);
 }
 
@@ -201,6 +307,13 @@ async function getWatchlistItem(ticker: string) {
     ticker: string;
     notes: string | null;
     priority: number | null;
+    name: string | null;
+    origin: string | null;
+    rank: number | null;
+    status: string | null;
+    zone: string | null;
+    quality: number | null;
+    moat_commentary: string | null;
     added_at: Date;
     updated_at: Date;
     removed_at: Date | null;
@@ -214,6 +327,13 @@ async function getWatchlistItem(ticker: string) {
     ticker: row.ticker,
     notes: row.notes,
     priority: row.priority,
+    name: row.name,
+    origin: row.origin,
+    rank: row.rank,
+    status: row.status,
+    zone: row.zone,
+    quality: row.quality,
+    moatCommentary: row.moat_commentary,
     isRemoved: Boolean(row.removed_at),
     addedAt: row.added_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -227,6 +347,13 @@ export async function listWatchlist(includeRemoved = false) {
     ticker: string;
     notes: string | null;
     priority: number | null;
+    name: string | null;
+    origin: string | null;
+    rank: number | null;
+    status: string | null;
+    zone: string | null;
+    quality: number | null;
+    moat_commentary: string | null;
     added_at: Date;
     updated_at: Date;
     removed_at: Date | null;
@@ -240,6 +367,13 @@ export async function listWatchlist(includeRemoved = false) {
     ticker: row.ticker,
     notes: row.notes,
     priority: row.priority,
+    name: row.name,
+    origin: row.origin,
+    rank: row.rank,
+    status: row.status,
+    zone: row.zone,
+    quality: row.quality,
+    moatCommentary: row.moat_commentary,
     isRemoved: Boolean(row.removed_at),
     addedAt: row.added_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

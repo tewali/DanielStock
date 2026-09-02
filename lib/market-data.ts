@@ -219,7 +219,11 @@ function rowToBar(row: {
 }): PriceBar {
   const date =
     row.trading_date instanceof Date
-      ? row.trading_date.toISOString().slice(0, 10)
+      ? [
+          row.trading_date.getFullYear(),
+          String(row.trading_date.getMonth() + 1).padStart(2, '0'),
+          String(row.trading_date.getDate()).padStart(2, '0'),
+        ].join('-')
       : String(row.trading_date).slice(0, 10);
   return {
     date,

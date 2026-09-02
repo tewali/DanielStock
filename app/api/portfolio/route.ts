@@ -22,6 +22,13 @@ async function ensureSchema(sql: Pool) {
       id text PRIMARY KEY,
       state jsonb NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS portfolio_state_events (
+      id bigserial PRIMARY KEY,
+      portfolio_id text NOT NULL,
+      changes jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
 }
@@ -84,6 +91,20 @@ export async function PUT(request: Request) {
   `,
     [encoded],
   );
+  await sql.query(
+    `INSERT INTO portfolio_state_events (portfolio_id, changes)
+     VALUES ('primary', $1::jsonb)`,
+    [
+      JSON.stringify({
+        source: 'dashboard',
+        parameters: parsed.data.state.params,
+        priority: parsed.data.state.priority,
+        shockPercent: parsed.data.state.shock,
+        growthOverrides: parsed.data.state.growth,
+        marginOfSafetyOverrides: parsed.data.state.mos,
+      }),
+    ],
+  );
   return Response.json({ ok: true, updatedAt: result.rows[0]?.updated_at });
 }
 
@@ -98,5 +119,9 @@ export async function DELETE(request: Request) {
 
   await ensureSchema(sql);
   await sql.query("DELETE FROM portfolio_state WHERE id = 'primary'");
+  await sql.query(
+    `INSERT INTO portfolio_state_events (portfolio_id, changes)
+     VALUES ('primary', '{"source":"dashboard","reset":true}'::jsonb)`,
+  );
   return Response.json({ ok: true });
 }

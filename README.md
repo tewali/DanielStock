@@ -72,6 +72,16 @@ Der Server stellt neben der Titelverwaltung folgende Portfoliofunktionen bereit:
 - Detaillierte Bewertungsmatrix: `get_stock_evaluation` und
   `update_stock_evaluation` für alle 14 Faktoren auf der Skala 1–6; der
   Durchschnitt wird serverseitig neu berechnet
+- Portfolio-Regeln und Planung: `get_portfolio_settings`,
+  `update_portfolio_settings`, `get_purchase_plan` und
+  `run_portfolio_scenario`; Szenarien verändern weder gespeicherte Annahmen
+  noch Yahoo-Kurse
+- Screening und Methodik: `search_screening_universe`,
+  `get_screening_stock` und `get_screening_methodology` für das vollständige
+  250-Titel-Universum, Growing 50, Bewertungsdaten und Research-Regeln
+- Historie und Audit: `get_price_history` liefert unveränderbare
+  Yahoo-OHLCV-Tagesdaten, `list_change_history` die unveränderbare Historie
+  von Aktien-, Transaktions-, Einstellungs-, Watchlist- und Research-Änderungen
 - Kursbetrieb: `list_market_refreshes`, `retry_failed_refreshes` und
   `refresh_stock_market_data`
 
@@ -93,6 +103,10 @@ Hinzufügungen und Analytics-Änderungen erscheinen nach spätestens 60 Sekunden
 im geöffneten Dashboard; beim Neuladen sofort.
 
 Alle schreibenden Eingabeschemas sind strikt und enthalten kein Feld für den aktuellen Marktpreis. Zusätzliche Felder wie `price` oder `currentPrice` werden abgewiesen. `add_stock` lädt automatisch den aktuellen Kurs und die tägliche Ein-Jahres-Historie; `refresh_stock_market_data` aktualisiert beides erneut. Diese Marktdaten kommen ausschließlich serverseitig von Yahoo Finance. Fair Value sowie Kauf-, Halte- und Verkaufsschwellen sind bewusst editierbare Research-Annahmen und keine Marktpreise.
+
+Optionale Research- und Bewertungsfelder können über `clearFields` explizit
+geleert werden; einzelne Matrixfaktoren über `clearScores`. Ein versehentlich
+fehlendes Feld in einem Update löscht dagegen weiterhin keine Daten.
 
 ## Deployment
 
