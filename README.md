@@ -71,7 +71,9 @@ Der Server stellt neben der Titelverwaltung folgende Portfoliofunktionen bereit:
   `manage_watchlist` und `list_watchlist`
 - Detaillierte Bewertungsmatrix: `get_stock_evaluation` und
   `update_stock_evaluation` für alle 14 Faktoren auf der Skala 1–6; der
-  Durchschnitt wird serverseitig neu berechnet
+  Durchschnitt wird serverseitig neu berechnet. `evaluationCoverage` macht
+  sichtbar, ob eine Matrix vollständig, teilweise oder noch gar nicht bewertet
+  ist.
 - Portfolio-Regeln und Planung: `get_portfolio_settings`,
   `update_portfolio_settings`, `get_purchase_plan` und
   `run_portfolio_scenario`; Szenarien verändern weder gespeicherte Annahmen

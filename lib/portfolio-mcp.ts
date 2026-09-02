@@ -321,10 +321,29 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       try {
         const stock = await getManagedStock(ticker);
         if (!stock) return failure(new Error(`No managed record exists for ${ticker}`));
+        const evaluationScores = stock.evaluationScores ?? {};
+        const ratedFactors = Object.keys(evaluationScores).length;
         return result({
           ticker: stock.ticker,
-          evaluationScores: stock.evaluationScores ?? {},
+          evaluationScores,
           evaluationAverage: stock.evaluationAverage ?? null,
+          evaluationCoverage: {
+            ratedFactors,
+            expectedFactors: 14,
+            complete: ratedFactors === 14,
+            status:
+              ratedFactors === 14
+                ? 'complete'
+                : ratedFactors === 0
+                  ? 'not-rated'
+                  : 'partial',
+            reason:
+              ratedFactors === 0
+                ? 'No 14-factor evaluation matrix has been stored for this ticker.'
+                : ratedFactors < 14
+                  ? `${14 - ratedFactors} evaluation factors are not rated.`
+                  : null,
+          },
           scale: { best: 1, worst: 6 },
           thesis: stock.thesis ?? null,
           risk: stock.risk ?? null,

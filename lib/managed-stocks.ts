@@ -155,7 +155,7 @@ export async function ensureManagedStocksSchema(sql: Pool) {
 }
 
 async function seedPortfolioArtifactStocks(sql: Pool) {
-  const result = await sql.query<{ ticker: string }>(
+  const result = await sql.query<{ ticker: string; inserted: boolean }>(
     `
       INSERT INTO managed_stocks (
         ticker, name, currency, sector, region, quality, moat, score,
@@ -190,12 +190,24 @@ async function seedPortfolioArtifactStocks(sql: Pool) {
         evaluation_average double precision
       )
       WHERE true
-      ON CONFLICT (ticker) DO NOTHING
-      RETURNING ticker
+      ON CONFLICT (ticker) DO UPDATE SET
+        evaluation_scores = CASE
+          WHEN managed_stocks.evaluation_scores IS NULL
+            THEN EXCLUDED.evaluation_scores
+          ELSE managed_stocks.evaluation_scores
+        END,
+        evaluation_average = CASE
+          WHEN managed_stocks.evaluation_scores IS NULL
+            THEN EXCLUDED.evaluation_average
+          ELSE managed_stocks.evaluation_average
+        END
+      WHERE managed_stocks.evaluation_scores IS NULL
+        AND EXCLUDED.evaluation_scores IS NOT NULL
+      RETURNING ticker, (xmax = 0) AS inserted
     `,
     [JSON.stringify(PORTFOLIO_ARTIFACT_STOCK_SEEDS)],
   );
-  return result.rows.map((row) => row.ticker);
+  return result.rows.filter((row) => row.inserted).map((row) => row.ticker);
 }
 
 async function ensureManagedStocksReady(sql: Pool) {
