@@ -68,7 +68,7 @@ const CSS = `
 .ck tbody tr:hover td { background:#F5F8F5; }
 .ck tbody tr.sel td { background:#EEF2FB; }
 .ck .r { text-align:right; }
-.ck .scroll { overflow:auto; }
+.ck .scroll { min-width:0; max-width:100%; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
 .ck .scroll::-webkit-scrollbar { width:10px; height:10px; }
 .ck .scroll::-webkit-scrollbar-thumb { background:#C9D0C9; border-radius:6px; border:3px solid ${T.paper}; }
 .ck input[type=number], .ck input[type=text], .ck select { border:1px solid ${T.line}; background:${T.panel}; border-radius:7px; padding:5px 8px; font-variant-numeric:tabular-nums; }
@@ -79,6 +79,7 @@ const CSS = `
 .ck .navbtn[aria-current=true] { color:${T.accent}; border-color:rgba(39,64,127,.12); background:${T.panel}; box-shadow:0 5px 18px rgba(23,33,30,.06); font-weight:650; }
 .ck .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.01em; white-space:nowrap; }
 .ck .panel { background:${T.panel}; border:1px solid ${T.line}; border-radius:10px; box-shadow:0 7px 24px rgba(23,33,30,.045); overflow:hidden; }
+.ck .panel.scroll { overflow:auto; }
 .ck .lbl { font-size:11.5px; color:${T.muted}; }
 .ck .dot { transition: r 120ms ease; }
 .ck .app-header { background:rgba(255,255,255,.88) !important; backdrop-filter:blur(14px); box-shadow:0 1px 0 rgba(23,33,30,.03); }
@@ -623,19 +624,21 @@ function Cockpit({ m, open, selected, go }) {
           </div>
           <div style={{ marginTop: 16 }}>
             <Lbl>Größte Positionen gegen ihr Maximalgewicht</Lbl>
-            <table style={{ marginTop: 6 }}>
-              <tbody>
-                {positions.slice(0, 8).map((r) => (
-                  <tr key={r.ticker} style={{ cursor: "pointer" }} onClick={() => open(r.ticker)}>
-                    <td style={{ padding: "5px 8px 5px 0", width: 130 }}>{r.name}</td>
-                    <td style={{ padding: "5px 8px 5px 0" }}><WeightBar w={r.w} maxW={r.maxW} /></td>
-                    <td className="num r" style={{ padding: "5px 0", width: 100, color: r.w > r.maxW ? T.reduce : T.muted }}>
-                      {pct(r.w)} / {pct(r.maxW)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="scroll">
+              <table style={{ marginTop: 6 }}>
+                <tbody>
+                  {positions.slice(0, 8).map((r) => (
+                    <tr key={r.ticker} style={{ cursor: "pointer" }} onClick={() => open(r.ticker)}>
+                      <td style={{ padding: "5px 8px 5px 0", width: 130 }}>{r.name}</td>
+                      <td style={{ padding: "5px 8px 5px 0" }}><WeightBar w={r.w} maxW={r.maxW} /></td>
+                      <td className="num r" style={{ padding: "5px 0", width: 100, color: r.w > r.maxW ? T.reduce : T.muted }}>
+                        {pct(r.w)} / {pct(r.maxW)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </Section>
 
@@ -656,17 +659,19 @@ function Cockpit({ m, open, selected, go }) {
             {buys.length === 0 ? (
               <div style={{ padding: "10px 0", color: T.muted }}>Kein Kauf vorgeschlagen. Budget, Zielgewichte oder Annahmen im Kaufplan anpassen.</div>
             ) : (
-              <table style={{ marginTop: 6 }}>
-                <tbody>
-                  {buys.map((r) => (
-                    <tr key={r.ticker}>
-                      <td className="tick" style={{ padding: "5px 0", width: 74 }}>{r.ticker}</td>
-                      <td style={{ padding: "5px 0" }}>{r.name}</td>
-                      <td className="num r" style={{ padding: "5px 0", fontWeight: 600 }}>{eur(r.today)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="scroll">
+                <table style={{ marginTop: 6 }}>
+                  <tbody>
+                    {buys.map((r) => (
+                      <tr key={r.ticker}>
+                        <td className="tick" style={{ padding: "5px 0", width: 74 }}>{r.ticker}</td>
+                        <td style={{ padding: "5px 0" }}>{r.name}</td>
+                        <td className="num r" style={{ padding: "5px 0", fontWeight: 600 }}>{eur(r.today)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             <button onClick={() => go("plan")} style={{ marginTop: 10, background: "none", border: `1px solid ${T.line}`, padding: "5px 10px", borderRadius: 3 }}>Kaufplan öffnen</button>
           </div>
@@ -1250,7 +1255,7 @@ function Regeln({ state, set, reset, m }) {
       </Section>
 
       <Section title="Archetypen und Frühindikatoren" note="Welcher Indikator einen Kandidaten zuerst verrät.">
-        <div className="panel">
+        <div className="panel scroll">
           <table>
             <thead><tr><th style={{ width: 190 }}>Archetyp</th><th style={{ width: 300 }}>Primärer Frühindikator</th><th>Mindestprüfung</th></tr></thead>
             <tbody>{D.gcConcept.arche.map(([a, b, c]) => <tr key={a}><td style={{ fontWeight: 600 }}>{a}</td><td style={{ color: T.muted }}>{b}</td><td style={{ color: T.muted }}>{c}</td></tr>)}</tbody>
