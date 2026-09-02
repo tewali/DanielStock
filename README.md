@@ -42,7 +42,8 @@ Alle schreibenden Eingabeschemas sind strikt und enthalten kein Feld für den ak
 
 ## Deployment
 
-Die Produktionsanwendung läuft als Next.js-Node-Server auf Coolify. Sie nutzt
+Die Produktionsanwendung läuft als schlankes, mehrstufig gebautes
+Next.js-Standalone-Image auf Coolify. Sie nutzt
 eine private PostgreSQL-Datenbank im gleichen Coolify-Netzwerk; der
 `DATABASE_URL` wird ausschließlich als serverseitige Laufzeitvariable gesetzt.
 `DASHBOARD_PASSWORD` ist in Produktion verpflichtend und wird ebenfalls nur als
