@@ -33,7 +33,7 @@ Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und wird unabhängig vom Das
 
 Der Server stellt `list_stocks`, `get_stock`, `add_stock`, `remove_stock`, `update_stock_analytics` und `refresh_stock_market_data` bereit. Hinzufügungen und Analytics-Änderungen erscheinen nach spätestens 60 Sekunden im geöffneten Dashboard; beim Neuladen sofort.
 
-Alle schreibenden Eingabeschemas sind strikt und enthalten kein Feld für den aktuellen Marktpreis. Zusätzliche Felder wie `price` oder `currentPrice` werden abgewiesen. `add_stock` und `refresh_stock_market_data` beziehen den aktuellen Kurs ausschließlich serverseitig von Yahoo Finance. Fair Value sowie Kauf-, Halte- und Verkaufsschwellen sind bewusst editierbare Research-Annahmen und keine Marktpreise.
+Alle schreibenden Eingabeschemas sind strikt und enthalten kein Feld für den aktuellen Marktpreis. Zusätzliche Felder wie `price` oder `currentPrice` werden abgewiesen. `add_stock` lädt automatisch den aktuellen Kurs und die tägliche Ein-Jahres-Historie; `refresh_stock_market_data` aktualisiert beides erneut. Diese Marktdaten kommen ausschließlich serverseitig von Yahoo Finance. Fair Value sowie Kauf-, Halte- und Verkaufsschwellen sind bewusst editierbare Research-Annahmen und keine Marktpreise.
 
 ## Deployment
 

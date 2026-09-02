@@ -143,13 +143,25 @@ export function createPortfolioMcpServer() {
     {
       title: 'Add or restore a stock',
       description:
-        'Adds a stock to the dashboard, or restores a removed stock. The current market price is fetched from Yahoo Finance and cannot be supplied by the caller.',
+        'Adds a stock to the dashboard, or restores a removed stock. The current quote and one-year daily history are fetched from Yahoo Finance automatically and cannot be supplied by the caller.',
       inputSchema: addStockSchema,
       annotations: { idempotentHint: true },
     },
     async ({ ticker, ...metadata }) => {
       try {
-        const market = await refreshQuotes([ticker]);
+        const [market, historyResult] = await Promise.all([
+          refreshQuotes([ticker]),
+          getPriceHistory(ticker).then(
+            (history) => ({ history, error: null }),
+            (error: unknown) => ({
+              history: null,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Price history is temporarily unavailable',
+            }),
+          ),
+        ]);
         const quote = market.quotes.find((item) => item.ticker === ticker);
         if (!quote) {
           const detail = market.errors[0]?.error ?? 'No quote returned';
@@ -161,7 +173,19 @@ export function createPortfolioMcpServer() {
           'add',
           true,
         );
-        return result({ stock, marketDataSource: quote.source });
+        return result({
+          stock,
+          marketDataSource: quote.source,
+          priceHistory: historyResult.history
+            ? {
+                bars: historyResult.history.bars.length,
+                from: historyResult.history.bars.at(0)?.date ?? null,
+                to: historyResult.history.bars.at(-1)?.date ?? null,
+                fetchedAt: historyResult.history.fetchedAt,
+                source: historyResult.history.source,
+              }
+            : { error: historyResult.error },
+        });
       } catch (error) {
         return failure(error);
       }
