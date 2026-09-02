@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   BadgeDollarSign, BarChart3, Briefcase, Check, ClipboardList,
   Clock3, Copy, Database, Eye, LayoutDashboard, Plug, RefreshCw,
@@ -123,6 +123,23 @@ const CSS = `
 .ck .settings-action svg { width:14px; height:14px; }
 .ck .settings-code { display:flex; align-items:center; gap:8px; margin-top:9px; padding:8px 9px; border:1px solid ${T.line}; border-radius:8px; background:${T.panel}; }
 .ck .settings-code code { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
+.ck .refresh-overview { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:10px 0; }
+.ck .refresh-metric { padding:9px 8px; border:1px solid ${T.line}; border-radius:8px; background:${T.panel}; text-align:center; }
+.ck .refresh-metric strong { display:block; font-size:18px; line-height:1.15; }
+.ck .refresh-history { display:grid; gap:7px; }
+.ck .refresh-run { border:1px solid ${T.line}; border-radius:8px; background:${T.panel}; overflow:hidden; }
+.ck .refresh-run summary { display:flex; align-items:center; gap:8px; padding:9px 10px; cursor:pointer; list-style:none; }
+.ck .refresh-run summary::-webkit-details-marker { display:none; }
+.ck .refresh-run summary::after { content:"⌄"; margin-left:auto; color:${T.muted}; font-size:16px; transition:transform 140ms ease; }
+.ck .refresh-run[open] summary::after { transform:rotate(180deg); }
+.ck .refresh-run-body { padding:0 10px 10px; border-top:1px solid #EDF0EC; }
+.ck .refresh-group { margin-top:9px; }
+.ck .refresh-tickers { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+.ck .refresh-chip { display:inline-flex; align-items:center; padding:2px 6px; border-radius:6px; background:#EDF3EF; color:${T.buy}; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.ck .refresh-problem { display:grid; grid-template-columns:78px minmax(0,1fr); gap:8px; padding:5px 0; border-bottom:1px solid #EDF0EC; font-size:11.5px; }
+.ck .refresh-problem:last-child { border-bottom:0; }
+.ck .refresh-problem .tick { color:${T.ink}; }
+.ck .refresh-empty { padding:10px 0; color:${T.muted}; font-size:12.5px; }
 @keyframes settings-in { from { transform:translate(-50%,-47%); opacity:.65; } to { transform:translate(-50%,-50%); opacity:1; } }
 @keyframes drawer-in { from { transform:translateX(20px); opacity:.6; } to { transform:translateX(0); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .ck * { transition:none !important; animation:none !important; } }
@@ -170,6 +187,7 @@ const CSS = `
   .ck .drawer .scroll { padding:12px 14px 28px !important; }
   .ck .settings-modal { width:100vw; max-height:none; height:100dvh; border:0; border-radius:0; }
   .ck .settings-modal-body { padding:14px 12px calc(28px + env(safe-area-inset-bottom)); }
+  .ck .refresh-problem { grid-template-columns:68px minmax(0,1fr); }
 }
 @media (max-width: 480px) {
   .ck .kpi { flex-basis:100% !important; min-width:100% !important; border-right:0 !important; }
@@ -1782,11 +1800,87 @@ function Drawer({ ticker, m, state, set, close, data }) {
   );
 }
 
-function SettingsModal({ close, storageStatus, saved, openQuotes }) {
+const refreshTime = (value) => value
+  ? new Date(value).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })
+  : "–";
+
+function RefreshRunDetails({ run, retrying, onRetry }) {
+  const updated = run.items.filter((item) => item.status === "updated");
+  const failed = run.items.filter((item) => item.status === "failed");
+  const skipped = run.items.filter((item) => item.status === "skipped");
+  const retryable = failed.length;
+
+  return (
+    <div className="refresh-run-body">
+      {updated.length > 0 && (
+        <div className="refresh-group">
+          <div className="lbl">Aktualisiert · {updated.length}</div>
+          <div className="refresh-tickers">
+            {updated.map((item) => <span className="refresh-chip" key={item.ticker}>{item.ticker}</span>)}
+          </div>
+        </div>
+      )}
+      {failed.length > 0 && (
+        <div className="refresh-group">
+          <div className="lbl" style={{ color: T.sell }}>Fehlgeschlagen · {failed.length}</div>
+          {failed.map((item) => (
+            <div className="refresh-problem" key={item.ticker}>
+              <span className="tick">{item.ticker}</span><span style={{ color: T.sell }}>{item.reason || "Unbekannter Fehler"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {skipped.length > 0 && (
+        <div className="refresh-group">
+          <div className="lbl" style={{ color: T.reduce }}>Übersprungen · {skipped.length}</div>
+          {skipped.map((item) => (
+            <div className="refresh-problem" key={item.ticker}>
+              <span className="tick">{item.ticker}</span><span style={{ color: T.reduce }}>{item.reason || "Prüfung nicht bestanden"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {run.error && <div style={{ marginTop: 9, color: T.sell, fontSize: 12 }}>{run.error}</div>}
+      {retryable > 0 && (
+        <button className="settings-action" onClick={() => onRetry(run.id)} disabled={retrying} style={{ marginTop: 10 }}>
+          <RefreshCw aria-hidden="true" />{retrying ? "Wird erneut versucht …" : `${retryable} fehlgeschlagene Titel erneut versuchen`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SettingsModal({ close, storageStatus, saved, openQuotes, refreshPortfolio }) {
   const mcpUrl = "https://danielstock.apps.tewali.de/api/mcp";
   const [copied, setCopied] = useState(false);
+  const [refreshData, setRefreshData] = useState({ lastAutomatic: null, runs: [] });
+  const [refreshLoading, setRefreshLoading] = useState(true);
+  const [refreshError, setRefreshError] = useState("");
+  const [retrying, setRetrying] = useState(null);
+
+  const loadRefreshHistory = useCallback(async () => {
+    try {
+      const response = await fetch("/api/market-data/refreshes", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Aktualisierungsverlauf nicht erreichbar");
+      setRefreshData({ lastAutomatic: payload.lastAutomatic || null, runs: payload.runs || [] });
+      setRefreshError("");
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : "Aktualisierungsverlauf nicht erreichbar");
+    } finally {
+      setRefreshLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
+    void fetch("/api/market-data/refreshes", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Aktualisierungsverlauf nicht erreichbar");
+        setRefreshData({ lastAutomatic: payload.lastAutomatic || null, runs: payload.runs || [] });
+      })
+      .catch((error) => setRefreshError(error instanceof Error ? error.message : "Aktualisierungsverlauf nicht erreichbar"))
+      .finally(() => setRefreshLoading(false));
     const onKeyDown = (event) => {
       if (event.key === "Escape") close();
     };
@@ -1797,12 +1891,31 @@ function SettingsModal({ close, storageStatus, saved, openQuotes }) {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [close]);
+  }, [close, loadRefreshHistory]);
 
   const copyMcpUrl = async () => {
     await navigator.clipboard.writeText(mcpUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const retryRun = async (runId) => {
+    setRetrying(runId);
+    setRefreshError("");
+    try {
+      const response = await fetch("/api/market-data/refreshes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Erneuter Versuch fehlgeschlagen");
+      await Promise.all([loadRefreshHistory(), refreshPortfolio()]);
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : "Erneuter Versuch fehlgeschlagen");
+    } finally {
+      setRetrying(null);
+    }
   };
 
   const statusText = storageStatus === "connecting"
@@ -1847,6 +1960,50 @@ function SettingsModal({ close, storageStatus, saved, openQuotes }) {
               </div>
             </div>
             <div style={{ fontSize: 12.5 }}>Der tägliche Job aktualisiert alle beobachteten und MCP-verwalteten Titel. Währungsfehler und Kurssprünge über 35&nbsp;% werden nicht übernommen.</div>
+            {refreshLoading ? (
+              <div className="refresh-empty">Aktualisierungsstatus wird geladen …</div>
+            ) : refreshData.lastAutomatic ? (
+              <>
+                <div style={{ marginTop: 11, fontWeight: 600, fontSize: 12.5 }}>Letzter erfolgreicher automatischer Lauf</div>
+                <div className="lbl">{refreshTime(refreshData.lastAutomatic.finishedAt)}</div>
+                <div className="refresh-overview">
+                  <div className="refresh-metric"><strong style={{ color: T.buy }}>{refreshData.lastAutomatic.updated}</strong><span className="lbl">aktualisiert</span></div>
+                  <div className="refresh-metric"><strong style={{ color: refreshData.lastAutomatic.failed ? T.sell : T.muted }}>{refreshData.lastAutomatic.failed}</strong><span className="lbl">fehlgeschlagen</span></div>
+                  <div className="refresh-metric"><strong style={{ color: refreshData.lastAutomatic.skipped ? T.reduce : T.muted }}>{refreshData.lastAutomatic.skipped}</strong><span className="lbl">übersprungen</span></div>
+                </div>
+              </>
+            ) : (
+              <div className="refresh-empty">Noch kein automatischer Lauf gespeichert. Nach dem ersten Cron-Lauf erscheint hier sein Ergebnis.</div>
+            )}
+            {refreshError && <div style={{ marginTop: 8, color: T.sell, fontSize: 12 }}>{refreshError}</div>}
+          </section>
+
+          <section className="settings-card">
+            <div className="settings-card-head">
+              <Clock3 aria-hidden="true" />
+              <div>
+                <h3 style={{ fontSize: 14 }}>Letzte Aktualisierungen</h3>
+                <div className="lbl">Ticker, Fehlergründe und übersprungene Plausibilitätsprüfungen</div>
+              </div>
+            </div>
+            {!refreshLoading && refreshData.runs.length === 0 ? (
+              <div className="refresh-empty">Noch kein Verlauf vorhanden.</div>
+            ) : (
+              <div className="refresh-history">
+                {refreshData.runs.map((run, index) => (
+                  <details className="refresh-run" key={run.id} open={index === 0}>
+                    <summary aria-label={`${run.trigger === "cron" ? "Automatischer Lauf" : "Erneuter Versuch"} vom ${refreshTime(run.finishedAt || run.startedAt)}`}>
+                      <span className={`status-dot ${run.status === "success" ? "connected" : run.status === "failed" ? "offline" : ""}`} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", fontWeight: 600, fontSize: 12.5 }}>{run.trigger === "cron" ? "Automatisch" : "Erneuter Versuch"} · {refreshTime(run.finishedAt || run.startedAt)}</span>
+                        <span className="lbl">{run.updated} aktualisiert · {run.failed} fehlgeschlagen · {run.skipped} übersprungen</span>
+                      </span>
+                    </summary>
+                    <RefreshRunDetails run={run} retrying={retrying === run.id} onRetry={retryRun} />
+                  </details>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="settings-card">
@@ -1986,6 +2143,14 @@ export default function PortfolioCockpit() {
       setStorageStatus("offline");
     }
   };
+  const refreshPortfolio = async () => {
+    const response = await fetch("/api/portfolio", { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Portfolio konnte nicht neu geladen werden");
+    if (payload.state) {
+      setState((current) => ({ ...current, ...payload.state, params: { ...DEFAULTS, ...payload.state.params } }));
+    }
+  };
   const data = useMemo(() => mergeManagedData(managedStocks), [managedStocks]);
   const m = useModel(state, data);
   const open = (t) => setSel(t);
@@ -2052,6 +2217,7 @@ export default function PortfolioCockpit() {
           storageStatus={storageStatus}
           saved={saved}
           openQuotes={() => { setSettingsOpen(false); setTab("kurse"); }}
+          refreshPortfolio={refreshPortfolio}
         />
       )}
     </div>
