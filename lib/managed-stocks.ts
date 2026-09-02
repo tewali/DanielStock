@@ -24,6 +24,23 @@ export type StockAnalyticsPatch = {
   researchDate?: string;
 };
 
+export type StockEvaluationScores = {
+  market?: number;
+  competition?: number;
+  regulation?: number;
+  balanceSheet?: number;
+  margin?: number;
+  roe?: number;
+  fcf?: number;
+  management?: number;
+  ownership?: number;
+  capitalAllocation?: number;
+  businessModel?: number;
+  moat?: number;
+  brand?: number;
+  product?: number;
+};
+
 export type ManagedStock = StockAnalyticsPatch & {
   ticker: string;
   isRemoved: boolean;
@@ -31,6 +48,8 @@ export type ManagedStock = StockAnalyticsPatch & {
   marketCurrency: string | null;
   marketPriceAt: string | null;
   marketDataFetchedAt: string | null;
+  evaluationScores?: StockEvaluationScores;
+  evaluationAverage?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -54,6 +73,8 @@ type StockRow = {
   notes: string | null;
   research_source: string | null;
   research_date: string | Date | null;
+  evaluation_scores: StockEvaluationScores | null;
+  evaluation_average: number | null;
   is_removed: boolean;
   current_market_price: number | null;
   market_currency: string | null;
@@ -92,6 +113,8 @@ export async function ensureManagedStocksSchema(sql: Pool) {
       notes text,
       research_source text,
       research_date date,
+      evaluation_scores jsonb,
+      evaluation_average double precision,
       is_removed boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -107,6 +130,10 @@ export async function ensureManagedStocksSchema(sql: Pool) {
 
     CREATE INDEX IF NOT EXISTS managed_stock_events_ticker_date_idx
       ON managed_stock_events (ticker, created_at DESC);
+
+    ALTER TABLE managed_stocks
+      ADD COLUMN IF NOT EXISTS evaluation_scores jsonb,
+      ADD COLUMN IF NOT EXISTS evaluation_average double precision;
   `);
 }
 
@@ -116,12 +143,14 @@ async function seedPortfolioArtifactStocks(sql: Pool) {
       INSERT INTO managed_stocks (
         ticker, name, currency, sector, region, quality, moat, score,
         fair_value, buy_below, hold_below, sell_above, expected_growth,
-        thesis, risk, research_source, research_date
+        thesis, risk, research_source, research_date, evaluation_scores,
+        evaluation_average
       )
       SELECT
         ticker, name, currency, sector, region, quality, moat, score,
         fair_value, buy_below, hold_below, sell_above, expected_growth,
-        thesis, risk, research_source, research_date
+        thesis, risk, research_source, research_date, evaluation_scores,
+        evaluation_average
       FROM jsonb_to_recordset($1::jsonb) AS seed(
         ticker text,
         name text,
@@ -139,7 +168,9 @@ async function seedPortfolioArtifactStocks(sql: Pool) {
         thesis text,
         risk text,
         research_source text,
-        research_date date
+        research_date date,
+        evaluation_scores jsonb,
+        evaluation_average double precision
       )
       WHERE true
       ON CONFLICT (ticker) DO NOTHING
@@ -153,12 +184,32 @@ async function seedPortfolioArtifactStocks(sql: Pool) {
 async function ensureManagedStocksReady(sql: Pool) {
   await Promise.all([ensureManagedStocksSchema(sql), ensureMarketDataSchema(sql)]);
   const insertedTickers = await seedPortfolioArtifactStocks(sql);
-  if (insertedTickers.length) await refreshQuotes(insertedTickers);
+  if (insertedTickers.length) {
+    const currencies = new Set(
+      PORTFOLIO_ARTIFACT_STOCK_SEEDS
+        .filter((stock) => insertedTickers.includes(stock.ticker))
+        .map((stock) => stock.currency)
+        .filter((currency): currency is string => Boolean(currency && currency !== 'EUR')),
+    );
+    await refreshQuotes([
+      ...insertedTickers,
+      ...[...currencies].map((currency) => `EUR${currency}=X`),
+    ]);
+  }
 }
 
 function iso(value: string | Date | null) {
   if (value === null) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function dateOnly(value: string | Date) {
+  if (typeof value === 'string') return value.slice(0, 10);
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 function optional<T>(value: T | null): T | undefined {
@@ -184,9 +235,9 @@ function rowToManagedStock(row: StockRow): ManagedStock {
     risk: optional(row.risk),
     notes: optional(row.notes),
     researchSource: optional(row.research_source),
-    researchDate: row.research_date
-      ? iso(row.research_date)?.slice(0, 10)
-      : undefined,
+    researchDate: row.research_date ? dateOnly(row.research_date) : undefined,
+    evaluationScores: optional(row.evaluation_scores),
+    evaluationAverage: optional(row.evaluation_average),
     isRemoved: row.is_removed,
     currentMarketPrice: row.current_market_price,
     marketCurrency: row.market_currency,
@@ -343,4 +394,78 @@ export async function removeManagedStock(ticker: string) {
     client.release();
   }
   return getManagedStock(ticker);
+}
+
+export async function updateManagedStockEvaluation(
+  ticker: string,
+  input: {
+    scores: StockEvaluationScores;
+    thesis?: string;
+    risk?: string;
+    researchSource?: string;
+    researchDate?: string;
+  },
+) {
+  const sql = requiredDatabase();
+  await ensureManagedStocksSchema(sql);
+  const client = await sql.connect();
+  await client.query('BEGIN');
+  try {
+    const existingResult = await client.query<{
+      evaluation_scores: StockEvaluationScores | null;
+    }>(
+      'SELECT evaluation_scores FROM managed_stocks WHERE ticker = $1 FOR UPDATE',
+      [ticker],
+    );
+    if (!existingResult.rows[0]) throw new Error(`No managed record exists for ${ticker}`);
+    const scores = {
+      ...existingResult.rows[0].evaluation_scores,
+      ...input.scores,
+    };
+    const values = Object.values(scores);
+    if (!values.length) throw new Error('At least one evaluation score is required');
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    await client.query(
+      `UPDATE managed_stocks SET
+         evaluation_scores = $2::jsonb,
+         evaluation_average = $3,
+         thesis = COALESCE($4, thesis),
+         risk = COALESCE($5, risk),
+         research_source = COALESCE($6, research_source),
+         research_date = COALESCE($7::date, research_date),
+         updated_at = now()
+       WHERE ticker = $1`,
+      [
+        ticker,
+        JSON.stringify(scores),
+        average,
+        input.thesis ?? null,
+        input.risk ?? null,
+        input.researchSource ?? null,
+        input.researchDate ?? null,
+      ],
+    );
+    await client.query(
+      `INSERT INTO managed_stock_events (ticker, action, changes)
+       VALUES ($1, 'update', $2::jsonb)`,
+      [
+        ticker,
+        JSON.stringify({
+          evaluationScores: input.scores,
+          evaluationAverage: average,
+          thesis: input.thesis,
+          risk: input.risk,
+          researchSource: input.researchSource,
+          researchDate: input.researchDate,
+        }),
+      ],
+    );
+    await client.query('COMMIT');
+    return getManagedStock(ticker);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

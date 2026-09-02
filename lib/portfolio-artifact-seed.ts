@@ -18,7 +18,36 @@ export type PortfolioArtifactStockSeed = {
   risk: string | null;
   research_source: string | null;
   research_date: string | null;
+  evaluation_scores: Record<string, number> | null;
+  evaluation_average: number | null;
 };
+
+const evaluationKeys: Record<string, string> = {
+  Markt: 'market',
+  Wettbewerb: 'competition',
+  Regulierung: 'regulation',
+  Bilanz: 'balanceSheet',
+  Marge: 'margin',
+  ROE: 'roe',
+  FCF: 'fcf',
+  Management: 'management',
+  Eigentümer: 'ownership',
+  Kapitalallokation: 'capitalAllocation',
+  Geschäftsmodell: 'businessModel',
+  Burggraben: 'moat',
+  Marke: 'brand',
+  Produkt: 'product',
+};
+
+function evaluationScores(scores?: Record<string, number>) {
+  if (!scores) return null;
+  return Object.fromEntries(
+    Object.entries(scores).flatMap(([key, value]) => {
+      const normalized = evaluationKeys[key];
+      return normalized ? [[normalized, value]] : [];
+    }),
+  );
+}
 
 function researchDate(value?: string) {
   if (!value) return null;
@@ -57,6 +86,11 @@ for (const stock of portfolioArtifactData.valuation) {
     risk: analysis?.risk ?? null,
     research_source: stock.src === '#' ? null : stock.src,
     research_date: researchDate(analysis?.date),
+    evaluation_scores: evaluationScores(
+      (analysis as { scores?: Record<string, number> } | undefined)?.scores,
+    ),
+    evaluation_average:
+      (analysis as { avg?: number } | undefined)?.avg ?? null,
   });
 }
 
@@ -82,6 +116,11 @@ for (const stock of portfolioArtifactData.portfolio) {
     risk: analysis?.risk ?? null,
     research_source: null,
     research_date: researchDate(analysis?.date),
+    evaluation_scores: evaluationScores(
+      (analysis as { scores?: Record<string, number> } | undefined)?.scores,
+    ),
+    evaluation_average:
+      (analysis as { avg?: number } | undefined)?.avg ?? null,
   });
 }
 

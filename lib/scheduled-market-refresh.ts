@@ -222,7 +222,13 @@ export async function refreshCurrentMarketPrices(options?: {
         .filter((entry): entry is [string, MarketTarget] => Boolean(entry[1])),
     );
     if (!targets.size) throw new Error('Keine aktiven Titel für diesen Lauf');
-    const symbols = [...targets.keys(), 'EURUSD=X'];
+    const fxSymbols = new Set(
+      [...targets.values()]
+        .map((target) => target.currency)
+        .filter((currency) => currency !== 'EUR')
+        .map((currency) => `EUR${currency}=X`),
+    );
+    const symbols = [...targets.keys(), ...fxSymbols];
     const result = await refreshQuotes(symbols);
 
     await sql.query(`
@@ -242,8 +248,10 @@ export async function refreshCurrentMarketPrices(options?: {
     let eurusd: number | null = null;
 
     for (const quote of result.quotes) {
-      if (quote.ticker === 'EURUSD=X') {
-        if (quote.price > 0.5 && quote.price < 2) eurusd = quote.price;
+      if (fxSymbols.has(quote.ticker)) {
+        if (quote.ticker === 'EURUSD=X') {
+          if (quote.price > 0.5 && quote.price < 2) eurusd = quote.price;
+        }
         continue;
       }
       const target = targets.get(quote.ticker);
@@ -283,7 +291,7 @@ export async function refreshCurrentMarketPrices(options?: {
     }
 
     for (const providerError of result.errors) {
-      if (providerError.ticker === 'EURUSD=X') continue;
+      if (fxSymbols.has(providerError.ticker)) continue;
       items.set(providerError.ticker, {
         ticker: providerError.ticker,
         status: 'failed',

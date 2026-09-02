@@ -219,6 +219,23 @@ const pct = (n, d = 1) => (n === null || n === undefined || Number.isNaN(n) ? "�
 const sgn = (n, d = 1) => (n > 0 ? "+" : "") + pct(n, d);
 const price = (n, c) => (n >= 100 ? nf(n, 0) : n >= 1 ? nf(n, 2) : nf(n, 3)) + (c ? " " + c : "");
 
+const EVALUATION_LABELS = {
+  market: "Markt",
+  competition: "Wettbewerb",
+  regulation: "Regulierung",
+  balanceSheet: "Bilanz",
+  margin: "Marge",
+  roe: "ROE",
+  fcf: "FCF",
+  management: "Management",
+  ownership: "Eigentümer",
+  capitalAllocation: "Kapitalallokation",
+  businessModel: "Geschäftsmodell",
+  moat: "Burggraben",
+  brand: "Marke",
+  product: "Produkt",
+};
+
 function mergeManagedData(managedStocks) {
   if (!managedStocks.length) return D;
   const removed = new Set(managedStocks.filter((s) => s.isRemoved).map((s) => s.ticker));
@@ -264,9 +281,18 @@ function mergeManagedData(managedStocks) {
   });
   const matrix = { ...D.matrix };
   active.forEach((stock, ticker) => {
-    if (!stock.thesis && !stock.risk && !stock.researchDate) return;
+    const evaluationScores = Object.fromEntries(
+      Object.entries(stock.evaluationScores || {}).flatMap(([key, value]) =>
+        EVALUATION_LABELS[key] ? [[EVALUATION_LABELS[key], value]] : [],
+      ),
+    );
+    if (!stock.thesis && !stock.risk && !stock.researchDate && !Object.keys(evaluationScores).length) return;
     matrix[ticker] = {
       ...matrix[ticker],
+      scores: Object.keys(evaluationScores).length
+        ? { ...matrix[ticker]?.scores, ...evaluationScores }
+        : matrix[ticker]?.scores,
+      avg: stock.evaluationAverage ?? matrix[ticker]?.avg,
       thesis: stock.thesis ?? matrix[ticker]?.thesis,
       risk: stock.risk ?? matrix[ticker]?.risk,
       date: stock.researchDate ?? matrix[ticker]?.date,
