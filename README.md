@@ -86,6 +86,28 @@ Der Server stellt neben der Titelverwaltung folgende Portfoliofunktionen bereit:
   von Aktien-, Transaktions-, Einstellungs-, Watchlist- und Research-Änderungen
 - Kursbetrieb: `list_market_refreshes`, `retry_failed_refreshes` und
   `refresh_stock_market_data`
+- Fundamentaldaten: `get_fundamental_history` und `get_fundamental_snapshot`
+  liefern quartalsweise, jährliche oder TTM-Historien. Jeder Wert kennzeichnet
+  seine Herkunft als gemeldet, manuell oder abgeleitet. Historische Fakten
+  werden über `preview_fundamentals_import` geprüft und anschließend mit
+  `commit_fundamentals_import` revisionssicher übernommen.
+- Annahmen: `get_fundamental_assumptions`,
+  `upsert_fundamental_assumptions` und `delete_fundamental_assumptions`
+  verwalten Base-/Bull-/Bear-/Custom-Szenarien in einem eigenen Datenspeicher;
+  sie können historische Fakten nicht verändern.
+
+Ein minimaler Fundamentaldaten-Import sieht so aus (Verhältnisse wie Margen
+und ROIC werden als Dezimalzahl angegeben):
+
+```csv
+ticker,period_end,period_type,fiscal_year,fiscal_quarter,currency,fact_basis,revenue,diluted_eps,operating_cash_flow,capex,cash,total_debt,shares_outstanding,stock_based_compensation,buybacks,dividends_paid,source_url
+AAPL,2026-06-27,quarterly,2026,3,USD,reported,94036000000,1.57,27867000000,3460000000,55280000000,101020000000,14773000000,3200000000,21000000000,3900000000,https://example.com/filing
+```
+
+Fehlende Werte für Free Cashflow, Margen, Net Debt und ROIC werden nur dann
+berechnet, wenn ihre nötigen Eingangsgrößen vorhanden sind, und anschließend
+explizit als `derived` markiert. Ein identischer CSV-Import wird anhand seines
+Inhalts-Hashes nicht doppelt gespeichert.
 
 Die ursprünglichen Depotbestände werden einmalig als Eröffnungspositionen in
 PostgreSQL angelegt. Da die Quelldaten keine historischen Anschaffungskosten

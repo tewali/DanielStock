@@ -6,7 +6,7 @@ import {
   Clock3, Copy, Database, Eye, LayoutDashboard, Plug, RefreshCw,
   Settings, SlidersHorizontal, Sparkles, Target, TrendingUp, X,
 } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import portfolioArtifactData from "@/lib/portfolio-artifact-data.json";
@@ -106,6 +106,26 @@ const CSS = `
 .ck .drawer-backdrop { position:fixed; inset:0; z-index:39; border:0; background:rgba(17,25,22,.25); backdrop-filter:blur(2px); }
 .ck .drawer-backdrop:active { transform:none; }
 .ck .drawer { border-radius:14px 0 0 14px; overflow:hidden; animation:drawer-in 180ms ease-out; }
+.ck .fund-shell { border:1px solid ${T.line}; border-radius:11px; padding:12px; margin:0 0 16px; background:#FBFCFA; overflow:hidden; }
+.ck .fund-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.ck .fund-toggle { display:flex; padding:2px; border:1px solid ${T.line}; border-radius:8px; background:#F0F3EF; flex:0 0 auto; }
+.ck .fund-toggle button { border:0; border-radius:6px; padding:4px 8px; background:transparent; color:${T.muted}; font-size:11px; }
+.ck .fund-toggle button.active { background:${T.panel}; color:${T.ink}; box-shadow:0 1px 4px rgba(23,33,30,.1); font-weight:650; }
+.ck .fund-legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+.ck .fund-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:999px; border:1px solid ${T.line}; color:${T.muted}; font-size:10.5px; background:white; }
+.ck .fund-tag::before { content:""; width:6px; height:6px; border-radius:50%; background:${T.accent}; }
+.ck .fund-tag.derived::before { background:${T.reduce}; }
+.ck .fund-tag.assumption { border-style:dashed; }
+.ck .fund-tag.assumption::before { background:${T.hold}; }
+.ck .fund-kpis { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:11px; }
+.ck .fund-kpi { min-width:0; padding:8px 9px; border:1px solid #E2E6E1; border-radius:8px; background:white; }
+.ck .fund-kpi-value { margin-top:2px; font-size:15px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ck .fund-chart { margin-top:10px; padding-top:9px; border-top:1px solid #E7EAE6; min-width:0; overflow:hidden; }
+.ck .fund-chart-title { display:flex; justify-content:space-between; gap:8px; color:${T.muted}; font-size:11px; }
+.ck .fund-assumptions { margin-top:12px; padding:10px; border:1px dashed #AEB6B0; border-radius:9px; background:#F7F8F6; }
+.ck .fund-assumption-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; padding:6px 0; border-bottom:1px solid #E5E8E4; }
+.ck .fund-assumption-row:last-child { border-bottom:0; }
+.ck .fund-empty { padding:12px 2px 2px; color:${T.muted}; font-size:12px; }
 .ck .settings-button { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; margin-left:auto; border:1px solid ${T.line}; border-radius:9px; background:#F7F9F7; position:relative; }
 .ck .settings-button:hover { background:#EEF2EE; border-color:#AEB8AE; }
 .ck .settings-button svg { width:18px; height:18px; }
@@ -190,6 +210,7 @@ const CSS = `
   .ck .drawer > div:first-child { padding:12px 14px !important; }
   .ck .drawer > div:first-child button { min-width:44px; min-height:44px; font-size:24px !important; }
   .ck .drawer .scroll { padding:12px 14px 28px !important; }
+  .ck .fund-shell { padding:11px; }
   .ck .settings-modal { width:100vw; max-height:none; height:100dvh; border:0; border-radius:0; }
   .ck .settings-modal-body { padding:14px 12px calc(28px + env(safe-area-inset-bottom)); }
   .ck .refresh-problem { grid-template-columns:68px minmax(0,1fr); }
@@ -1711,6 +1732,117 @@ function PriceHistoryChart({ ticker, expectedCurrency }) {
   );
 }
 
+const FUND_LABELS = {
+  revenue: "Umsatz", dilutedEps: "EPS", freeCashFlow: "Free Cashflow",
+  grossMargin: "Bruttomarge", operatingMargin: "Operative Marge", fcfMargin: "FCF-Marge",
+  roic: "ROIC", cash: "Cash", netDebt: "Net Debt", sharesOutstanding: "Aktienanzahl",
+  stockBasedCompensation: "SBC", buybacks: "Buybacks", dividendsPaid: "Dividenden",
+};
+const FUND_COLORS = [T.accent, T.buy, T.reduce];
+const fundAmount = (value, currency, ratio = false, perShare = false) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
+  if (ratio) return pct(value, 1);
+  if (perShare) return `${nf(value, 2)} ${currency || ""}`.trim();
+  return `${new Intl.NumberFormat("de-DE", { notation: "compact", maximumFractionDigits: 1 }).format(value)}${currency ? ` ${currency}` : ""}`;
+};
+
+function FundamentalChart({ title, periods, metrics, currency, ratio = false }) {
+  const data = periods.map((period) => ({
+    label: period.fiscalQuarter ? `Q${period.fiscalQuarter} ${String(period.fiscalYear).slice(-2)}` : `${period.fiscalYear}`,
+    periodEnd: period.periodEnd,
+    ...period.metrics,
+  }));
+  if (!metrics.some((metric) => data.some((point) => Number.isFinite(point[metric])))) return null;
+  const config = Object.fromEntries(metrics.map((metric, index) => [metric, { label: FUND_LABELS[metric], color: FUND_COLORS[index] }]));
+  return (
+    <div className="fund-chart">
+      <div className="fund-chart-title"><span>{title}</span><span>{ratio ? "%" : currency}</span></div>
+      <ChartContainer config={config} style={{ width: "100%", height: 138, marginTop: 4 }} initialDimension={{ width: 372, height: 138 }} aria-label={title}>
+        <LineChart data={data} margin={{ top: 8, right: 5, bottom: 1, left: 5 }}>
+          <CartesianGrid vertical={false} stroke="#E9EDE8" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} fontSize={10} />
+          <YAxis hide />
+          <ChartTooltip content={<ChartTooltipContent labelFormatter={(_, payload) => payload?.[0]?.payload?.periodEnd ? new Date(payload[0].payload.periodEnd).toLocaleDateString("de-DE") : ""} formatter={(value, name) => <span className="num">{FUND_LABELS[name] || name}: {fundAmount(Number(value), currency, ratio, name === "dilutedEps")}</span>} />} />
+          {metrics.map((metric) => <Line key={metric} type="monotone" dataKey={metric} stroke={`var(--color-${metric})`} strokeWidth={2} dot={false} connectNulls activeDot={{ r: 3 }} />)}
+        </LineChart>
+      </ChartContainer>
+    </div>
+  );
+}
+
+function FundamentalsPanel({ ticker }) {
+  const [periodType, setPeriodType] = useState("quarterly");
+  const [resource, setResource] = useState({ key: null, status: "loading", data: null });
+  const resourceKey = `${ticker}:${periodType}`;
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/fundamentals/${encodeURIComponent(ticker)}?periodType=${periodType}&limit=40`, { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Fundamentaldaten nicht verfügbar");
+        if (active) setResource({ key: `${ticker}:${periodType}`, status: "ready", data: body });
+      })
+      .catch(() => { if (active) setResource({ key: `${ticker}:${periodType}`, status: "error", data: null }); });
+    return () => { active = false; };
+  }, [ticker, periodType]);
+
+  const activeResource = resource.key === resourceKey ? resource : { status: "loading", data: null };
+  const payload = activeResource.data;
+  const status = activeResource.status;
+  const periods = payload?.periods || [];
+  const latest = periods[periods.length - 1];
+  const currency = latest?.currency || "";
+  const derivedCount = periods.reduce((sum, period) => sum + Object.values(period.metricOrigins || {}).filter((origin) => origin === "derived").length, 0);
+  return (
+    <div className="fund-shell">
+      <div className="fund-head">
+        <div><div style={{ fontWeight: 650, fontSize: 13 }}>Fundamentale Entwicklung</div><div className="lbl">Fakten und Annahmen bewusst getrennt</div></div>
+        <div className="fund-toggle" aria-label="Berichtsperiode">
+          <button className={periodType === "quarterly" ? "active" : ""} onClick={() => setPeriodType("quarterly")}>Quartal</button>
+          <button className={periodType === "annual" ? "active" : ""} onClick={() => setPeriodType("annual")}>Jahr</button>
+        </div>
+      </div>
+      <div className="fund-legend"><span className="fund-tag">Historischer Fakt</span>{derivedCount > 0 && <span className="fund-tag derived">Abgeleitet</span>}<span className="fund-tag assumption">Annahme</span></div>
+      {status === "loading" && <div className="market-progress" style={{ marginTop: 16 }} />}
+      {status === "error" && <div className="fund-empty">Fundamentaldaten konnten gerade nicht geladen werden.</div>}
+      {status === "ready" && periods.length === 0 && (
+        <div className="fund-empty"><strong>Noch keine Historie.</strong><br />Per MCP mit <span className="tick">preview_fundamentals_import</span> prüfen und anschließend übernehmen.</div>
+      )}
+      {latest && (
+        <>
+          <div className="fund-kpis">
+            {[["Umsatz", "revenue", false], ["EPS", "dilutedEps", false], ["FCF", "freeCashFlow", false], ["ROIC", "roic", true]].map(([label, metric, ratio]) => (
+              <div className="fund-kpi" key={metric}><div className="lbl">{label} · {latest.fiscalQuarter ? `Q${latest.fiscalQuarter}` : latest.periodType === "annual" ? "FY" : "TTM"}</div><div className="fund-kpi-value num">{fundAmount(latest.metrics[metric], currency, ratio, metric === "dilutedEps")}</div></div>
+            ))}
+          </div>
+          <FundamentalChart title="Umsatz" periods={periods} metrics={["revenue"]} currency={currency} />
+          <FundamentalChart title="Cashflow" periods={periods} metrics={["freeCashFlow", "stockBasedCompensation"]} currency={currency} />
+          <FundamentalChart title="Margen & Kapitalrendite" periods={periods} metrics={["grossMargin", "operatingMargin", "roic"]} currency={currency} ratio />
+          <FundamentalChart title="Bilanz" periods={periods} metrics={["cash", "netDebt"]} currency={currency} />
+          <FundamentalChart title="Kapitalallokation" periods={periods} metrics={["buybacks", "dividendsPaid"]} currency={currency} />
+          <FundamentalChart title="Aktienanzahl" periods={periods} metrics={["sharesOutstanding"]} currency="Aktien" />
+          <div className="lbl" style={{ marginTop: 9 }}>
+            Letzte Quelle: {latest.sourceName}{latest.sourceUrl && <> · <a href={latest.sourceUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>Quelle öffnen</a></>} · Stand {new Date(latest.periodEnd).toLocaleDateString("de-DE")}
+          </div>
+        </>
+      )}
+      {(payload?.assumptions || []).length > 0 && (
+        <div className="fund-assumptions">
+          <div style={{ fontWeight: 650, fontSize: 12 }}>Annahmen · nicht historisch</div>
+          {payload.assumptions.slice(0, 8).map((assumption) => (
+            <div className="fund-assumption-row" key={assumption.id}>
+              <span><span className="fund-tag assumption">{assumption.scenario}</span> {FUND_LABELS[assumption.metric] || assumption.metric}</span>
+              <span className="num" style={{ fontWeight: 650 }}>{fundAmount(assumption.value, assumption.currency || currency, ["grossMargin", "operatingMargin", "netMargin", "fcfMargin", "roic"].includes(assumption.metric), assumption.metric === "dilutedEps")}</span>
+              <span className="lbl">{new Date(assumption.periodEnd).toLocaleDateString("de-DE")}{assumption.note ? ` · ${assumption.note}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Drawer({ ticker, m, state, set, close, data }) {
   const v = m.vmap[ticker];
   const pos = m.positions.find((p) => p.ticker === ticker);
@@ -1743,6 +1875,7 @@ function Drawer({ ticker, m, state, set, close, data }) {
 
       <div className="scroll" style={{ padding: "14px 16px", overflowY: "auto" }}>
         <PriceHistoryChart ticker={ticker} expectedCurrency={v?.ccy} />
+        <FundamentalsPanel ticker={ticker} />
         {v && (
           <>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 14 }}>

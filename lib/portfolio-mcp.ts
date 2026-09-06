@@ -12,6 +12,15 @@ import {
 import { listChangeHistory } from '@/lib/portfolio-audit';
 import { getPriceHistory, refreshQuotes } from '@/lib/market-data';
 import {
+  commitFundamentalsImport,
+  deleteFundamentalAssumptions,
+  FUNDAMENTAL_METRICS,
+  getFundamentalHistory,
+  listFundamentalAssumptions,
+  previewFundamentalsImport,
+  upsertFundamentalAssumptions,
+} from '@/lib/portfolio-fundamentals';
+import {
   addTransaction,
   commitTransactionImport,
   deleteTransaction,
@@ -229,6 +238,20 @@ const tickerNumberRecordSchema = z.record(
   tickerSchema,
   z.number().min(-0.99).max(10),
 );
+
+const fundamentalMetricSchema = z.enum(FUNDAMENTAL_METRICS);
+const fundamentalScenarioSchema = z.enum(['base', 'bull', 'bear', 'custom']);
+const fundamentalAssumptionSchema = z
+  .object({
+    ticker: tickerSchema,
+    metric: fundamentalMetricSchema,
+    periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    scenario: fundamentalScenarioSchema,
+    value: z.number(),
+    currency: z.string().trim().toUpperCase().length(3).nullable().optional(),
+    note: z.string().trim().max(2_000).nullable().optional(),
+  })
+  .strict();
 
 function result(value: unknown) {
   const structuredContent = JSON.parse(JSON.stringify(value)) as Record<
@@ -1146,6 +1169,165 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
       try {
         return result({ events: await listChangeHistory(filters) });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_fundamental_history',
+    {
+      title: 'Get historical company fundamentals',
+      description:
+        'Returns quarterly, annual, or TTM fundamental facts with per-metric provenance. Historical facts and forward assumptions are returned in separate arrays. Values include revenue, EPS, cash flow, margins, ROIC, balance-sheet, share-count, SBC, buyback, and dividend data.',
+      inputSchema: z
+        .object({
+          ticker: tickerSchema,
+          periodType: z.enum(['quarterly', 'annual', 'ttm', 'all']).optional().default('quarterly'),
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          limit: z.number().int().min(1).max(200).optional().default(40),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ ticker, periodType, from, to, limit }) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result(await getFundamentalHistory(ticker, { periodType, from, to, limit }));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_fundamental_snapshot',
+    {
+      title: 'Get latest fundamental snapshot',
+      description:
+        'Returns the latest stored quarterly and annual fundamental facts plus assumptions, without mixing assumptions into reported values.',
+      inputSchema: z.object({ ticker: tickerSchema }).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ ticker }) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        const history = await getFundamentalHistory(ticker, { periodType: 'all', limit: 200 });
+        return result({
+          ticker,
+          latestQuarter: [...history.periods].reverse().find((period) => period.periodType === 'quarterly') ?? null,
+          latestAnnual: [...history.periods].reverse().find((period) => period.periodType === 'annual') ?? null,
+          assumptions: history.assumptions,
+        });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'preview_fundamentals_import',
+    {
+      title: 'Validate a fundamentals CSV import',
+      description:
+        'Validates a CSV without changing historical data and creates a 30-minute preview. Required columns: ticker, period_end, period_type, currency. Optional identifiers/provenance: fiscal_year, fiscal_quarter, fact_basis, source_url, notes. Metric columns: revenue, gross_profit, operating_income, net_income, diluted_eps, operating_cash_flow, capex, free_cash_flow, gross_margin, operating_margin, net_margin, fcf_margin, nopat, invested_capital, roic, cash, total_debt, net_debt, diluted_shares, shares_outstanding, stock_based_compensation, buybacks, dividends_paid. Ratios use decimals, e.g. 0.25 for 25%.',
+      inputSchema: z
+        .object({
+          csv: z.string().min(1).max(2_000_000),
+          sourceName: z.string().trim().min(1).max(240),
+          sourceUrl: z.url().max(2_000).nullable().optional(),
+        })
+        .strict(),
+      annotations: { destructiveHint: false },
+    },
+    async ({ csv, sourceName, sourceUrl }) => {
+      if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+      try {
+        return result(await previewFundamentalsImport(csv, sourceName, sourceUrl));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'commit_fundamentals_import',
+    {
+      title: 'Commit a validated fundamentals import',
+      description:
+        'Commits a valid fundamentals preview as an immutable source revision. Exact duplicate files are ignored. Corrected imports create a newer revision and preserve the earlier audit trail.',
+      inputSchema: z.object({ previewId: z.uuid() }).strict(),
+      annotations: { destructiveHint: false },
+    },
+    async ({ previewId }) => {
+      if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+      try {
+        return result(await commitFundamentalsImport(previewId));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_fundamental_assumptions',
+    {
+      title: 'Get fundamental assumptions',
+      description: 'Returns forward assumptions only. These records are deliberately separate from historical facts.',
+      inputSchema: z.object({ ticker: tickerSchema }).strict(),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ ticker }) => {
+      if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+      try {
+        return result({ ticker, assumptions: await listFundamentalAssumptions(ticker) });
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'upsert_fundamental_assumptions',
+    {
+      title: 'Create or update fundamental assumptions',
+      description:
+        'Writes base, bull, bear, or custom forward assumptions. This tool cannot change historical facts.',
+      inputSchema: z.object({ assumptions: z.array(fundamentalAssumptionSchema).min(1).max(500) }).strict(),
+      annotations: { destructiveHint: false },
+    },
+    async ({ assumptions }) => {
+      if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+      try {
+        return result(await upsertFundamentalAssumptions(assumptions));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'delete_fundamental_assumptions',
+    {
+      title: 'Delete fundamental assumptions',
+      description:
+        'Deletes matching forward assumptions for a ticker. Historical facts cannot be deleted through MCP.',
+      inputSchema: z
+        .object({
+          ticker: tickerSchema,
+          metric: fundamentalMetricSchema.optional(),
+          scenario: fundamentalScenarioSchema.optional(),
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        })
+        .strict(),
+      annotations: { destructiveHint: true },
+    },
+    async ({ ticker, metric, scenario, from }) => {
+      if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+      try {
+        return result(await deleteFundamentalAssumptions(ticker, { metric, scenario, from }));
       } catch (error) {
         return failure(error);
       }
