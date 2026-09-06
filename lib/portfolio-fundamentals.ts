@@ -44,6 +44,7 @@ type MetricOrigins = Partial<
 
 export type FundamentalPeriod = {
   id: string;
+  filingId: string;
   ticker: string;
   periodEnd: string;
   periodType: PeriodType;
@@ -95,7 +96,7 @@ const snakeToMetric: Record<string, FundamentalMetric> = {
   dividends_paid: 'dividendsPaid',
 };
 
-const metricToColumn = Object.fromEntries(
+export const metricToColumn = Object.fromEntries(
   Object.entries(snakeToMetric).map(([column, metric]) => [metric, column]),
 ) as Record<FundamentalMetric, string>;
 
@@ -164,7 +165,7 @@ function numeric(value: string, field: string, row: number, errors: string[]) {
   return Number.isFinite(result) ? result : undefined;
 }
 
-function normalizeImportRow(raw: Record<string, string>, rowNumber: number) {
+export function normalizeImportRow(raw: Record<string, string>, rowNumber: number) {
   const errors: string[] = [];
   const ticker = (raw.ticker || '').trim().toUpperCase();
   const periodEnd = (raw.period_end || '').trim();
@@ -435,6 +436,7 @@ function rowToPeriod(row: Record<string, unknown>): FundamentalPeriod {
     if (typeof value === 'number') metrics[metric] = value;
   }
   return {
+    filingId: String(row.filing_id),
     id: String(row.id),
     ticker: String(row.ticker),
     periodEnd: dateOnly(row.period_end as string | Date),

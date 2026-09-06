@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { filingUploadSchema, quarterlySchema, uploadFiling, listFilings, getFiling, upsertQuarterlyFinancials } from '@/lib/filings';
 import { companyHistorySchema, companyHistoryFilters, uploadCompanyHistory, getCompanyHistory } from '@/lib/company-history';
 
 import {
@@ -1352,6 +1353,43 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
   }, async (filters) => {
     if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
     try { return result(await getCompanyHistory(filters)); } catch (error) { return failure(error); }
+  });
+
+  server.registerTool('upload_filing', {
+    title: 'Archive a primary company filing',
+    description: 'Archives original PDF bytes (base64, up to 5 MB) and/or extracted report text with ticker, fiscal period and source. Does not fetch URLs or extract PDF text automatically. Returns filingId for normalized financials. Identical uploads are idempotent.',
+    inputSchema: filingUploadSchema,
+    annotations: { destructiveHint: false, idempotentHint: true },
+  }, async input => {
+    if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+    try { return result(await uploadFiling(input)); } catch (error) { return failure(error); }
+  });
+  server.registerTool('list_filings', {
+    title: 'List archived reports for a company',
+    description: 'Lists primary-source reports with fiscal periods, source metadata and content availability. Follow nextOffset to read all pages.',
+    inputSchema: z.object({ ticker: tickerSchema, limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0) }).strict(),
+    annotations: { readOnlyHint: true },
+  }, async input => {
+    if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+    try { return result(await listFilings(input)); } catch (error) { return failure(error); }
+  });
+  server.registerTool('get_filing', {
+    title: 'Read a filing and its source-linked financials',
+    description: 'Returns report metadata and recent normalization revisions. Request text or pdf content in chunks using nextOffset; PDF offsets/limits are bytes, text offsets/limits are characters. Decode each PDF base64 chunk separately before concatenating bytes.',
+    inputSchema: z.object({ filingId: z.uuid(), content: z.enum(['metadata','text','pdf']).default('metadata'), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(64000).default(16000) }).strict(),
+    annotations: { readOnlyHint: true },
+  }, async input => {
+    if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+    try { return result(await getFiling(input)); } catch (error) { return failure(error); }
+  });
+  server.registerTool('upsert_quarterly_financials', {
+    title: 'Store source-linked normalized financials',
+    description: 'Writes a complete quarterly or annual financial snapshot linked to an archived filing. Each supplied metric requires its original value, unit and source locator. Currency values use full units, ratios decimals. Cashflows must describe the standalone period. Revisions replace the full snapshot in history; include every metric to retain. Earlier revisions are preserved. Market-price fields are rejected.',
+    inputSchema: quarterlySchema,
+    annotations: { destructiveHint: false, idempotentHint: true },
+  }, async input => {
+    if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+    try { return result(await upsertQuarterlyFinancials(input)); } catch (error) { return failure(error); }
   });
 
   return server;

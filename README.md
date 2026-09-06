@@ -43,6 +43,48 @@ Anwendung gesetzt sein. Nach der Einrichtung sollte die Aufgabe einmal über
 
 ## MCP für die Portfolioverwaltung
 
+### Quartalsberichte und Primärquellen
+
+`upload_filing` archiviert einen Bericht mit Ticker, Geschäftsjahr, Quartal,
+Berichtszeitraum, Veröffentlichungsdatum, Rechnungslegungsstandard und Quelle.
+Der Inhalt wird als `pdfBase64` (bis 5 MB dekodiert) und/oder `extractedText`
+(bis 1 Mio. Zeichen) in PostgreSQL gespeichert. Die URL dient als Nachweis;
+der Server lädt sie nicht automatisch herunter und extrahiert keine PDFs.
+Identische Uploads liefern dieselbe `filingId`. Veränderte Berichte erhalten
+eine eigene ID. MCP-Clients können eigene Grenzen für große Tool-Aufrufe haben.
+
+`list_filings` listet die archivierten Berichte eines Tickers mit Pagination.
+`get_filing` liefert Metadaten, die letzten 20 Normalisierungsrevisionen sowie
+optional Text oder PDF in Abschnitten (`content`, `offset`, `limit`,
+`nextOffset`). Bei PDFs sind Offsets Bytes; jeder Base64-Abschnitt muss separat
+dekodiert und anschließend als Bytes zusammengesetzt werden. Bei Text sind
+Offsets Zeichen.
+
+`upsert_quarterly_financials` übernimmt einen vollständigen Quartals- oder
+Jahresdatensatz in den bestehenden Fundamentals-Speicher. Eingaben:
+
+- `filingId`, `currency`, `cashFlowBasis: "standalone_period"`
+- `metrics`: bekannte Fundamentals-Felder in camelCase, Beträge in vollen
+  Währungseinheiten, Verhältnisse als Dezimalzahlen
+- `rawFacts`: je gelieferter Kennzahl mindestens `metric`, `originalValue`,
+  `unit` und `locator` (Seite/Tabelle/XBRL-Tag), optional `transformation`
+
+Die Metadaten des Berichts bestimmen Ticker und Zeitraum. Quartals-Cashflows
+müssen bereits aus kumulierten YTD-Werten in Einzelquartale überführt sein;
+die Umrechnung ist in `transformation` zu dokumentieren. Fehlende FCF-,
+Margen- und Net-Debt-Werte werden wie beim bisherigen Import abgeleitet.
+Alle verfügbaren Kennzahlen müssen bei einer Korrektur erneut mitgegeben
+werden: sie erzeugt einen vollständigen neuen Snapshot, keinen Teil-Patch.
+Frühere Fassungen bleiben erhalten. `get_fundamental_history` liefert die
+aktuelle Fassung mit `filingId`; dieselben Werte erscheinen in den Charts.
+Rohangaben sind vom hochladenden Client geliefert und werden nicht durch den
+Server anhand des Berichtsinhalts verifiziert.
+
+Der Integrationstest `scripts/test-filings.mjs` benötigt eine isolierte
+PostgreSQL-Datenbank namens `filings_test` über `DATABASE_URL`. Er überprüft
+Archivierung, Duplikate, abschnittsweisen Abruf, PDF-Byte-Roundtrip,
+Normalisierung, Quellenverknüpfung und Revisionen mit synthetischen Daten.
+
 Zusätzliche Unternehmenshistorie wird mit `upload_company_history` als
 strukturierte Liste `records` hochgeladen und mit `get_company_history`
 abgerufen. `kind` ist `buyback`, `insider` oder `product`. Jeder Eintrag
