@@ -10,6 +10,7 @@ import { Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "r
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import portfolioArtifactData from "@/lib/portfolio-artifact-data.json";
+import CompanyHistory from "@/components/portfolio/company-history";
 
 const D = portfolioArtifactData;
 
@@ -1876,6 +1877,7 @@ function Drawer({ ticker, m, state, set, close, data }) {
       <div className="scroll" style={{ padding: "14px 16px", overflowY: "auto" }}>
         <PriceHistoryChart ticker={ticker} expectedCurrency={v?.ccy} />
         <FundamentalsPanel ticker={ticker} />
+        <CompanyHistory key={ticker} ticker={ticker} />
         {v && (
           <>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 14 }}>

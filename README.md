@@ -43,6 +43,31 @@ Anwendung gesetzt sein. Nach der Einrichtung sollte die Aufgabe einmal über
 
 ## MCP für die Portfolioverwaltung
 
+Zusätzliche Unternehmenshistorie wird mit `upload_company_history` als
+strukturierte Liste `records` hochgeladen und mit `get_company_history`
+abgerufen. `kind` ist `buyback`, `insider` oder `product`. Jeder Eintrag
+benötigt `recordKey` (stabile Quellen-ID), `ticker`, `date`, `sourceName` und
+eine HTTP(S)-`sourceUrl`. Korrekturen verwenden denselben Schlüssel;
+`includeRevisions: true` liefert auch frühere Fassungen. Identische Wiederholungen
+erzeugen keine neue Revision. Batches sind atomar. `nextOffset` erlaubt das
+vollständige Durchblättern großer Historien.
+
+- Buybacks: `periodStart`, `periodType` (quarterly/annual/event), `amount`,
+  `currency`, optional `sharesRepurchased` und `programName`. Diese Details
+  werden nicht zu den bereits importierten Fundamental-Summen addiert.
+- Insider: `insiderName`, `direction` (buy/sell), `shares`, `currency`,
+  `transactionType` (open_market/exercise/planned/other), optional `role`,
+  `transactionValue`, `filedAt`. Transaktionswerte sind keine aktuellen Kurse.
+- Produkte: `product`, `periodStart`, `periodType` (quarterly/annual),
+  `market`, `region`, `basis` (revenue/units/users), `evidence`
+  (reported/estimate/assumption). Kennzahlen: `marketShare`, `growth`
+  mit `growthComparison` (yoy/qoq), `revenue` mit `currency`, `units`.
+  Marktanteile und Wachstumsraten sind Dezimalzahlen: 0.15 bedeutet 15 %.
+
+Es werden keine externen Unternehmensdaten automatisch bezogen. Die
+Aktien-Detailansicht zeigt die hochgeladenen Einträge mit Quellen und
+Kennzeichnung von Schätzungen und Annahmen.
+
 Der Streamable-HTTP-Endpunkt liegt unter `/api/mcp` und verwendet OAuth 2.1 Authorization Code mit PKCE. ChatGPT entdeckt den Autorisierungsserver über RFC-9728-Metadaten, registriert sich dynamisch und öffnet anschließend die DanielStock-Freigabeseite. Das bestehende Dashboard-Passwort bestätigt dort den Zugriff. Access Tokens gelten eine Stunde; Refresh Tokens werden bei jeder Verwendung rotiert und nach 30 Tagen ungültig.
 
 Für die Produktion müssen `APP_URL=https://danielstock.apps.tewali.de`, `DATABASE_URL`, `DASHBOARD_PASSWORD` und `CRON_SECRET` gesetzt sein. `MCP_API_KEY` ist nur noch eine optionale Übergangslösung für bereits verbundene Clients und kann entfernt werden, sobald diese auf OAuth umgestellt wurden.

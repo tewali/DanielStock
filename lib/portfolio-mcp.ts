@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { companyHistorySchema, companyHistoryFilters, uploadCompanyHistory, getCompanyHistory } from '@/lib/company-history';
 
 import {
   clearManagedStockFields,
@@ -1333,6 +1334,25 @@ export function createPortfolioMcpServer(scopes: string[] = []) {
       }
     },
   );
+
+  server.registerTool('upload_company_history', {
+    title: 'Upload buybacks, insider transactions and product metrics',
+    description: 'Atomically uploads sourced company records. Reuse recordKey to correct a record; previous revisions remain retrievable. Market share and growth are decimal ratios (0.15 = 15%). Product growth specifies YoY or QoQ and a revenue/units/users basis. Insider amounts describe executed transactions, never current stock prices. Buyback details are separate from aggregate fundamental buybacks; do not sum both stores.',
+    inputSchema: z.object({ records: z.array(companyHistorySchema).min(1).max(500) }).strict(),
+    annotations: { destructiveHint: false, idempotentHint: true },
+  }, async ({ records }) => {
+    if (!scopes.includes('stocks:write')) return failure(new Error('insufficient_scope: stocks:write is required'));
+    try { return result(await uploadCompanyHistory(records)); } catch (error) { return failure(error); }
+  });
+  server.registerTool('get_company_history', {
+    title: 'Read buyback, insider and product history',
+    description: 'Reads full sourced company history, with optional kind/date filters and revision history. Follow nextOffset to retrieve all pages. Product records distinguish reported data, estimates and assumptions.',
+    inputSchema: companyHistoryFilters,
+    annotations: { readOnlyHint: true },
+  }, async (filters) => {
+    if (!scopes.includes('stocks:read')) return failure(new Error('insufficient_scope: stocks:read is required'));
+    try { return result(await getCompanyHistory(filters)); } catch (error) { return failure(error); }
+  });
 
   return server;
 }
